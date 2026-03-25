@@ -285,7 +285,7 @@ const App = () => {
     const charsContext = shot.shotCharacters?.length > 0 ? shot.shotCharacters.join(', ') : activeSketch.characters;
     const promptText = `A rough black and white pencil sketch storyboard frame for a comedy sketch titled "${activeSketch.title}". Context: ${shot.locationCaveat || activeSketch.sceneType}. Characters in frame: ${charsContext}. Action/Subject: A ${shot.type} shot of ${shot.subject}. Action: ${shot.action}. Notes: ${shot.notes}. Style: Traditional hand-drawn graphite pencil storyboard, rough sketch, cinematic framing.`;
     try {
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${apiKey}`, {
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:predict?key=${apiKey}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ instances: [{ prompt: promptText }], parameters: { sampleCount: 1 } })
       });
