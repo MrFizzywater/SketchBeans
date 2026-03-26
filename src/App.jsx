@@ -11,7 +11,7 @@ import {
 // --- FIREBASE IMPORTS ---
 import { initializeApp } from 'firebase/app';
 import { 
-  getAuth, signInWithCustomToken, signInWithPopup, 
+  getAuth, signInWithCustomToken, signInWithPopup, signInAnonymously,
   GoogleAuthProvider, GithubAuthProvider, onAuthStateChanged, signOut 
 } from 'firebase/auth';
 import { 
@@ -77,6 +77,10 @@ const App = () => {
   const [zoomedImage, setZoomedImage] = useState(null);
   const [isDetailsExpanded, setIsDetailsExpanded] = useState(window.innerWidth > 768);
   const [visiblePromptId, setVisiblePromptId] = useState(null);
+  
+  // NEW: State for the custom delete confirmation modal
+  const [sketchToDelete, setSketchToDelete] = useState(null);
+  
   const fileInputRef = useRef(null);
 
   const [isSyncing, setIsSyncing] = useState(false);
@@ -86,11 +90,17 @@ const App = () => {
   
   const apiKey = globalGeminiKey; 
 
-  // --- AUTHENTICATION LISTENER ---
+  // --- STRICT AUTHENTICATION BOOT ---
   useEffect(() => {
-    if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-      signInWithCustomToken(auth, __initial_auth_token).catch(console.error);
-    }
+    const initAuth = async () => {
+      if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+        await signInWithCustomToken(auth, __initial_auth_token).catch(console.error);
+      } else {
+        await signInAnonymously(auth).catch(console.error);
+      }
+    };
+    initAuth();
+    
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       setAuthResolved(true);
@@ -100,24 +110,34 @@ const App = () => {
 
   // --- THE CALL SHEET (USER PRESENCE TRACKER) ---
   useEffect(() => {
-    if (!isRealUser) return;
+    if (!user || !isRealUser) return;
     const trackPresence = async () => {
       try {
         const userRef = doc(db, 'artifacts', appId, 'public', 'data', 'users', user.uid);
         await setDoc(userRef, { email: user.email, displayName: user.displayName || 'Unknown Crew', lastSeen: new Date().toISOString(), uid: user.uid }, { merge: true });
-      } catch (err) { console.error("Presence tracker failed silently:", err); }
+      } catch (err) { 
+        // FIX: Silently fail if the user's personal Firebase rules don't permit public writes yet.
+      }
     };
     trackPresence();
   }, [isRealUser, user]);
 
   // --- FIRESTORE DATA SYNC (READ) ---
   useEffect(() => {
-    if (!isRealUser) return;
+    if (!user || !isRealUser) return;
     
     const sketchesRef = collection(db, 'artifacts', appId, 'users', user.uid, 'sketches');
     const unsubSketches = onSnapshot(sketchesRef, (snap) => {
       if (isInitialLoad.current.sketches) {
-        if (!snap.empty) setSketches(snap.docs.map(d => ({id: d.id, ...d.data()})));
+        if (!snap.empty) {
+          const loaded = snap.docs.map(d => ({id: d.id, ...d.data()}));
+          setSketches(loaded);
+          // FIX: Align the active viewport with the newly downloaded cloud IDs so shots don't disappear
+          setActiveSketchId(prevId => {
+            const exists = loaded.find(s => s.id === prevId);
+            return exists ? prevId : loaded[0].id;
+          });
+        }
         isInitialLoad.current.sketches = false;
       }
     }, (err) => console.error("Sketches sync error:", err));
@@ -189,15 +209,46 @@ const App = () => {
   const richCharactersContext = activeProfiles.map(c => `${c.name}${c.desc ? ` (${c.desc})` : ''}`).join(' | ');
 
   const pushToCloud = async () => {
-    if (!isRealUser) return;
+    if (!user || !isRealUser) return;
     setIsSyncing(true);
     try {
-      // FIX: Removed dangerous bulk-delete logic. 
-      // We now strictly overwrite existing files with the current reliable state.
       for (const s of sketches) await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'sketches', s.id), s, { merge: true });
       for (const s of shots) await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'shots', s.id), s, { merge: true });
     } catch (err) { console.error("Cloud push failed:", err); }
     setTimeout(() => setIsSyncing(false), 1000);
+  };
+  
+  // NEW: Handle Sketch Deletion safely
+  const confirmDeleteSketch = async () => {
+    if (!sketchToDelete) return;
+    const id = sketchToDelete.id;
+    
+    // 1. Clean local state
+    const updatedSketches = sketches.filter(s => s.id !== id);
+    if (updatedSketches.length === 0) {
+      // Don't leave them with a broken blank screen
+      const newId = Date.now().toString();
+      updatedSketches.push({ id: newId, title: 'New Sketch', settingType: 'INT.', location: 'LOCATION', timeOfDay: 'DAY', tone: 'Absurdist', characters: '', characterProfiles: [], props: '', hook: '', escalation: '', ending: '', script: '' });
+      setActiveSketchId(newId);
+    } else if (activeSketchId === id) {
+      setActiveSketchId(updatedSketches[0].id);
+    }
+    setSketches(updatedSketches);
+    
+    const shotsToDelete = shots.filter(s => s.sketchId === id);
+    setShots(prev => prev.filter(s => s.sketchId !== id));
+    
+    setSketchToDelete(null);
+
+    // 2. Clean cloud state aggressively
+    if (user && isRealUser) {
+      try {
+        await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'sketches', id));
+        for (const s of shotsToDelete) {
+          await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'shots', s.id));
+        }
+      } catch (err) { console.error("Failed to delete sketch from cloud:", err); }
+    }
   };
 
   const toggleShotCharacter = (shotId, charName) => {
@@ -240,10 +291,9 @@ const App = () => {
     setShots([...shots, { id: Date.now().toString(), sketchId: activeSketchId, number: nextNumber, type: 'Medium', subject: '', action: '', notes: '', dialogue: '', fx: false, image: null, locationCaveat: '', shotCharacters: [] }]);
   };
   
-  // FIX: Immediate Execution. Removes zombie shots safely right when you click the trash can.
   const deleteShot = async (shotId) => {
     setShots(prev => prev.filter(s => s.id !== shotId));
-    if (isRealUser) {
+    if (user && isRealUser) {
       try { await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'shots', shotId)); } 
       catch (e) { console.error("Failed to delete shot from cloud", e); }
     }
@@ -266,7 +316,7 @@ const App = () => {
   };
 
   const exportSnapshot = () => {
-    const data = { version: "1.4", timestamp: new Date().toISOString(), sketches, shots };
+    const data = { version: "1.5", timestamp: new Date().toISOString(), sketches, shots };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a'); link.href = url; link.download = `SketchShot_Backup_${new Date().getTime()}.json`;
@@ -365,7 +415,6 @@ const App = () => {
     } catch (err) { console.error(err); } finally { setLoadingStates(prev => ({ ...prev, genShots: false })); }
   };
 
-  // NEW: Single Shot AI Auto-Fill
   const generateSingleAIShot = async () => {
     setLoadingStates(prev => ({ ...prev, singleAIShot: true }));
     try {
@@ -582,6 +631,25 @@ const App = () => {
   return (
     <div className="flex h-screen w-full bg-zinc-950 text-zinc-100 font-sans selection:bg-orange-500/30 overflow-hidden relative">
       
+      {/* CUSTOM DELETE CONFIRMATION MODAL */}
+      {sketchToDelete && (
+        <div className="fixed inset-0 bg-black/80 z-[100] flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-zinc-900 border border-zinc-800 p-8 rounded-[2rem] max-w-sm w-full text-center space-y-6 shadow-2xl">
+            <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mx-auto border border-red-500/20">
+              <AlertCircle className="text-red-500" size={32} />
+            </div>
+            <div>
+              <h3 className="text-xl font-black text-white uppercase tracking-tighter">Delete Sketch?</h3>
+              <p className="text-zinc-400 text-sm mt-2">This will permanently destroy "{sketchToDelete.title}" and all its associated shots. You cannot fix this in post.</p>
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => setSketchToDelete(null)} className="flex-1 py-3 rounded-xl font-bold text-xs tracking-widest text-zinc-400 hover:text-white bg-zinc-800 hover:bg-zinc-700 transition-colors">CANCEL</button>
+              <button onClick={confirmDeleteSketch} className="flex-1 py-3 rounded-xl font-bold text-xs tracking-widest text-white bg-red-600 hover:bg-red-500 shadow-lg shadow-red-900/20 transition-colors">DELETE</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* MOBILE OVERLAY */}
       {isSidebarOpen && (
         <div className="fixed inset-0 bg-black/60 z-30 md:hidden backdrop-blur-sm" onClick={() => setSidebarOpen(false)} />
@@ -599,9 +667,14 @@ const App = () => {
         <nav className="flex-1 overflow-y-auto px-3 space-y-1 pb-4">
           <div className="text-[10px] font-black text-zinc-600 uppercase tracking-widest px-3 mb-2">My Sketches</div>
           {sketches.map(sketch => (
-            <button key={sketch.id} onClick={() => { setActiveSketchId(sketch.id); if(window.innerWidth < 768) setSidebarOpen(false); }} className={`w-full text-left px-3 py-2 rounded-lg flex items-center gap-3 transition-colors ${activeSketchId === sketch.id ? 'bg-zinc-800 text-orange-400' : 'text-zinc-400'}`}>
-              <FileText size={16} className="shrink-0" /> <span className="truncate flex-1 font-medium text-sm">{sketch.title || 'Untitled'}</span>
-            </button>
+            <div key={sketch.id} className={`w-full group text-left px-3 py-2 rounded-lg flex items-center justify-between transition-colors ${activeSketchId === sketch.id ? 'bg-zinc-800 text-orange-400' : 'text-zinc-400 hover:bg-zinc-800/50'}`}>
+              <button onClick={() => { setActiveSketchId(sketch.id); if(window.innerWidth < 768) setSidebarOpen(false); }} className="flex items-center gap-3 flex-1 min-w-0">
+                <FileText size={16} className="shrink-0" /> <span className="truncate font-medium text-sm">{sketch.title || 'Untitled'}</span>
+              </button>
+              <button onClick={(e) => { e.stopPropagation(); setSketchToDelete(sketch); }} className="opacity-0 group-hover:opacity-100 hover:text-red-400 p-1.5 transition-opacity" title="Delete Sketch">
+                <Trash2 size={14} />
+              </button>
+            </div>
           ))}
           <button onClick={() => { const id = Date.now().toString(); setSketches([...sketches, { id, title: 'New Sketch', settingType: 'INT.', location: 'LOCATION', timeOfDay: 'DAY', tone: 'Absurdist', characters: '', characterProfiles: [], props: '', hook: '', escalation: '', ending: '', script: '' }]); setActiveSketchId(id); if(window.innerWidth < 768) setSidebarOpen(false); }} className="w-full mt-4 flex items-center gap-2 px-3 py-2 text-xs text-zinc-500 hover:text-zinc-200"><Plus size={14} /> NEW SKETCH</button>
         </nav>
