@@ -15,7 +15,7 @@ import {
   GoogleAuthProvider, GithubAuthProvider, onAuthStateChanged, signOut 
 } from 'firebase/auth';
 import { 
-  getFirestore, collection, doc, setDoc, onSnapshot 
+  getFirestore, collection, doc, setDoc, onSnapshot, getDocs, deleteDoc 
 } from 'firebase/firestore';
 
 // --- ENVIRONMENT INITIALIZATION & SAFE KEY EXTRACTION ---
@@ -80,7 +80,9 @@ const App = () => {
   const fileInputRef = useRef(null);
 
   const [isSyncing, setIsSyncing] = useState(false);
-  const [dataLoaded, setDataLoaded] = useState(false);
+  
+  // FIX: Isolated loading refs to prevent the blocking Race Condition on boot
+  const isInitialLoad = useRef({ sketches: true, shots: true });
   
   const [boardCols, setBoardCols] = useState(2);
   
@@ -113,21 +115,25 @@ const App = () => {
   // --- FIRESTORE DATA SYNC (READ) ---
   useEffect(() => {
     if (!isRealUser) return;
+    
     const sketchesRef = collection(db, 'artifacts', appId, 'users', user.uid, 'sketches');
     const unsubSketches = onSnapshot(sketchesRef, (snap) => {
-      if (!snap.empty && !dataLoaded) setSketches(snap.docs.map(d => ({id: d.id, ...d.data()})));
+      if (isInitialLoad.current.sketches) {
+        if (!snap.empty) setSketches(snap.docs.map(d => ({id: d.id, ...d.data()})));
+        isInitialLoad.current.sketches = false;
+      }
     }, (err) => console.error("Sketches sync error:", err));
 
     const shotsRef = collection(db, 'artifacts', appId, 'users', user.uid, 'shots');
     const unsubShots = onSnapshot(shotsRef, (snap) => {
-      if (!snap.empty && !dataLoaded) {
-        setShots(snap.docs.map(d => ({id: d.id, ...d.data()})));
-        setDataLoaded(true); 
+      if (isInitialLoad.current.shots) {
+        if (!snap.empty) setShots(snap.docs.map(d => ({id: d.id, ...d.data()})));
+        isInitialLoad.current.shots = false;
       }
     }, (err) => console.error("Shots sync error:", err));
 
     return () => { unsubSketches(); unsubShots(); };
-  }, [isRealUser, user, dataLoaded]);
+  }, [isRealUser, user]);
 
   const loginWithProvider = async (providerName) => {
     const provider = providerName === 'google' ? new GoogleAuthProvider() : new GithubAuthProvider();
@@ -188,6 +194,22 @@ const App = () => {
     if (!isRealUser) return;
     setIsSyncing(true);
     try {
+      // FIX: The Zombie Trap. We must fetch what's currently in the cloud and delete anything 
+      // that no longer exists in our local imported state before we push the new save.
+      const cloudSketchesSnap = await getDocs(collection(db, 'artifacts', appId, 'users', user.uid, 'sketches'));
+      const cloudShotsSnap = await getDocs(collection(db, 'artifacts', appId, 'users', user.uid, 'shots'));
+
+      const localSketchIds = sketches.map(s => s.id);
+      const localShotIds = shots.map(s => s.id);
+
+      for (const docSnap of cloudSketchesSnap.docs) {
+        if (!localSketchIds.includes(docSnap.id)) await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'sketches', docSnap.id));
+      }
+      for (const docSnap of cloudShotsSnap.docs) {
+        if (!localShotIds.includes(docSnap.id)) await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'shots', docSnap.id));
+      }
+
+      // Now push the fresh data
       for (const s of sketches) await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'sketches', s.id), s, { merge: true });
       for (const s of shots) await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'shots', s.id), s, { merge: true });
     } catch (err) { console.error("Cloud push failed:", err); }
@@ -407,7 +429,6 @@ const App = () => {
     } catch(err) { console.error(err); } finally { setLoadingStates(prev => ({ ...prev, [`char-${charId}`]: false })); }
   };
 
-  // --- THE FIX: Clean Prompt Generator ---
   const getShotPrompt = (shot) => {
     const charContext = shot.shotCharacters?.length > 0 
       ? shot.shotCharacters.map(n => {
@@ -422,14 +443,10 @@ const App = () => {
     if (shot.action) prompt += `Action: ${shot.action} `;
     if (charContext) prompt += `Featuring: ${charContext}. `;
     if (shot.notes) prompt += `Visual Notes: ${shot.notes}. `;
-    
-    // Aggressive negative prompting to stop AI engines from drawing typography
     prompt += `Cinematic composition, rough hand-drawn style. PURE ARTWORK ONLY. NO TEXT, NO WORDS, NO TITLES, NO WATERMARKS in the image.`;
-    
     return prompt;
   };
 
-  // Safe mapping for Tailwind grid columns in print mode
   const gridColsClass = {
     1: 'grid-cols-1',
     2: 'grid-cols-2',
