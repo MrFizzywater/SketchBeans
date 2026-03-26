@@ -80,8 +80,6 @@ const App = () => {
   const fileInputRef = useRef(null);
 
   const [isSyncing, setIsSyncing] = useState(false);
-  
-  // FIX: Isolated loading refs to prevent the blocking Race Condition on boot
   const isInitialLoad = useRef({ sketches: true, shots: true });
   
   const [boardCols, setBoardCols] = useState(2);
@@ -194,22 +192,8 @@ const App = () => {
     if (!isRealUser) return;
     setIsSyncing(true);
     try {
-      // FIX: The Zombie Trap. We must fetch what's currently in the cloud and delete anything 
-      // that no longer exists in our local imported state before we push the new save.
-      const cloudSketchesSnap = await getDocs(collection(db, 'artifacts', appId, 'users', user.uid, 'sketches'));
-      const cloudShotsSnap = await getDocs(collection(db, 'artifacts', appId, 'users', user.uid, 'shots'));
-
-      const localSketchIds = sketches.map(s => s.id);
-      const localShotIds = shots.map(s => s.id);
-
-      for (const docSnap of cloudSketchesSnap.docs) {
-        if (!localSketchIds.includes(docSnap.id)) await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'sketches', docSnap.id));
-      }
-      for (const docSnap of cloudShotsSnap.docs) {
-        if (!localShotIds.includes(docSnap.id)) await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'shots', docSnap.id));
-      }
-
-      // Now push the fresh data
+      // FIX: Removed dangerous bulk-delete logic. 
+      // We now strictly overwrite existing files with the current reliable state.
       for (const s of sketches) await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'sketches', s.id), s, { merge: true });
       for (const s of shots) await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'shots', s.id), s, { merge: true });
     } catch (err) { console.error("Cloud push failed:", err); }
@@ -256,6 +240,15 @@ const App = () => {
     setShots([...shots, { id: Date.now().toString(), sketchId: activeSketchId, number: nextNumber, type: 'Medium', subject: '', action: '', notes: '', dialogue: '', fx: false, image: null, locationCaveat: '', shotCharacters: [] }]);
   };
   
+  // FIX: Immediate Execution. Removes zombie shots safely right when you click the trash can.
+  const deleteShot = async (shotId) => {
+    setShots(prev => prev.filter(s => s.id !== shotId));
+    if (isRealUser) {
+      try { await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'shots', shotId)); } 
+      catch (e) { console.error("Failed to delete shot from cloud", e); }
+    }
+  };
+
   const moveShot = (currentIndex, direction) => {
     if (viewMode !== 'storyboard') return;
     const newIndex = currentIndex + direction;
@@ -370,6 +363,34 @@ const App = () => {
         }))]);
       }
     } catch (err) { console.error(err); } finally { setLoadingStates(prev => ({ ...prev, genShots: false })); }
+  };
+
+  // NEW: Single Shot AI Auto-Fill
+  const generateSingleAIShot = async () => {
+    setLoadingStates(prev => ({ ...prev, singleAIShot: true }));
+    try {
+      const typeList = SHOT_TYPES.join(', ');
+      const systemPrompt = `Expert comedy director. Generate exactly ONE new shot to continue the sequence. Return a SINGLE JSON OBJECT with these EXACT keys: "type" (MUST BE EXACTLY ONE OF: ${typeList}), "subject", "action", "notes", "dialogue", "shotCharacters" (array of strings).`;
+      
+      const recentShots = activeShots.slice(-3).map(s => `Shot ${s.number}: [${s.type}] ${s.subject} - ${s.action}`).join('\n');
+      const prompt = `TONE: ${activeSketch.tone}\nSCENE: ${formattedSceneHeading}\nCHARACTERS: ${richCharactersContext}\nHOOK: ${activeSketch.hook}\nRECENT SHOTS:\n${recentShots}\n\nCreate the NEXT logical shot to build the comedy.`;
+
+      const newShotData = await callGemini(prompt, systemPrompt, true);
+      
+      if (newShotData) {
+        const nextNumber = activeShots.length > 0 ? Math.max(...activeShots.map(s => s.number)) + 1 : 1;
+        setShots(prev => [...prev, {
+          ...newShotData,
+          id: `ai-single-${Date.now()}`,
+          sketchId: activeSketchId,
+          number: nextNumber,
+          fx: false,
+          image: null,
+          locationCaveat: '',
+          shotCharacters: Array.isArray(newShotData.shotCharacters) ? newShotData.shotCharacters : []
+        }]);
+      }
+    } catch (err) { console.error(err); } finally { setLoadingStates(prev => ({ ...prev, singleAIShot: false })); }
   };
 
   const optimizeShootOrder = async () => {
@@ -837,7 +858,7 @@ const App = () => {
                                 <button onClick={() => moveShot(index, 1)} disabled={index === activeShots.length - 1} className="p-2 md:p-1.5 text-zinc-600 hover:text-white disabled:opacity-20"><ArrowDown size={14} /></button>
                               </div>
                             )}
-                            <button onClick={() => setShots(shots.filter(s => s.id !== shot.id))} className="p-2 text-zinc-600 hover:text-red-400 bg-zinc-950/50 sm:bg-transparent rounded-lg border border-zinc-800/50 sm:border-transparent"><Trash2 size={16} className="md:w-5 md:h-5" /></button>
+                            <button onClick={() => deleteShot(shot.id)} className="p-2 text-zinc-600 hover:text-red-400 bg-zinc-950/50 sm:bg-transparent rounded-lg border border-zinc-800/50 sm:border-transparent"><Trash2 size={16} className="md:w-5 md:h-5" /></button>
                           </div>
                         </div>
                         
@@ -870,9 +891,17 @@ const App = () => {
             )}
 
             {viewMode === 'storyboard' && (
-              <button onClick={addShot} className="w-full py-10 border-2 border-dashed border-zinc-800 rounded-[2rem] md:rounded-[3rem] text-zinc-600 hover:text-orange-500 hover:border-orange-500/50 hover:bg-orange-500/5 transition-all flex flex-col items-center justify-center gap-3 font-black tracking-widest group mt-6 md:mt-8">
-                <div className="bg-zinc-900 group-hover:bg-orange-500/20 p-4 rounded-full"><Plus size={24} className="text-zinc-500 group-hover:text-orange-500" /></div> ADD NEW SHOT
-              </button>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-6 md:mt-8">
+                <button onClick={addShot} className="w-full py-8 border-2 border-dashed border-zinc-800 rounded-[2rem] md:rounded-[3rem] text-zinc-600 hover:text-orange-500 hover:border-orange-500/50 hover:bg-orange-500/5 transition-all flex flex-col items-center justify-center gap-3 font-black tracking-widest group">
+                  <div className="bg-zinc-900 group-hover:bg-orange-500/20 p-4 rounded-full"><Plus size={24} className="text-zinc-500 group-hover:text-orange-500" /></div> ADD NEW SHOT
+                </button>
+                <button onClick={generateSingleAIShot} disabled={!isRealUser || loadingStates.singleAIShot} className="w-full py-8 border-2 border-dashed border-purple-900/50 rounded-[2rem] md:rounded-[3rem] text-purple-600/50 hover:text-purple-400 hover:border-purple-500/50 hover:bg-purple-500/5 transition-all flex flex-col items-center justify-center gap-3 font-black tracking-widest group disabled:opacity-50">
+                  <div className="bg-purple-900/20 group-hover:bg-purple-500/20 p-4 rounded-full">
+                    {loadingStates.singleAIShot ? <Loader2 size={24} className="animate-spin text-purple-500" /> : (!isRealUser ? <Lock size={24} /> : <Sparkles size={24} className="text-purple-500 group-hover:text-purple-400" />)}
+                  </div> 
+                  AUTO-FILL NEXT SHOT
+                </button>
+              </div>
             )}
             <div className="h-32" />
           </div>
