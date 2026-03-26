@@ -77,15 +77,11 @@ const App = () => {
   const [zoomedImage, setZoomedImage] = useState(null);
   const [isDetailsExpanded, setIsDetailsExpanded] = useState(window.innerWidth > 768);
   const [visiblePromptId, setVisiblePromptId] = useState(null);
-  
-  // NEW: State for the custom delete confirmation modal
   const [sketchToDelete, setSketchToDelete] = useState(null);
-  
   const fileInputRef = useRef(null);
 
   const [isSyncing, setIsSyncing] = useState(false);
   const isInitialLoad = useRef({ sketches: true, shots: true });
-  
   const [boardCols, setBoardCols] = useState(2);
   
   const apiKey = globalGeminiKey; 
@@ -96,7 +92,8 @@ const App = () => {
       if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
         await signInWithCustomToken(auth, __initial_auth_token).catch(console.error);
       } else {
-        await signInAnonymously(auth).catch(console.error);
+        // FIX: Silently catch the anonymous auth failure so it doesn't break the app
+        await signInAnonymously(auth).catch(() => {});
       }
     };
     initAuth();
@@ -116,7 +113,7 @@ const App = () => {
         const userRef = doc(db, 'artifacts', appId, 'public', 'data', 'users', user.uid);
         await setDoc(userRef, { email: user.email, displayName: user.displayName || 'Unknown Crew', lastSeen: new Date().toISOString(), uid: user.uid }, { merge: true });
       } catch (err) { 
-        // FIX: Silently fail if the user's personal Firebase rules don't permit public writes yet.
+        // Silently fail if public writes aren't enabled in Firebase rules
       }
     };
     trackPresence();
@@ -132,7 +129,6 @@ const App = () => {
         if (!snap.empty) {
           const loaded = snap.docs.map(d => ({id: d.id, ...d.data()}));
           setSketches(loaded);
-          // FIX: Align the active viewport with the newly downloaded cloud IDs so shots don't disappear
           setActiveSketchId(prevId => {
             const exists = loaded.find(s => s.id === prevId);
             return exists ? prevId : loaded[0].id;
@@ -214,19 +210,19 @@ const App = () => {
     try {
       for (const s of sketches) await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'sketches', s.id), s, { merge: true });
       for (const s of shots) await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'shots', s.id), s, { merge: true });
-    } catch (err) { console.error("Cloud push failed:", err); }
+    } catch (err) { 
+      console.error("Cloud push failed:", err);
+      alert(`Sync Failed: ${err.message}`);
+    }
     setTimeout(() => setIsSyncing(false), 1000);
   };
   
-  // NEW: Handle Sketch Deletion safely
   const confirmDeleteSketch = async () => {
     if (!sketchToDelete) return;
     const id = sketchToDelete.id;
     
-    // 1. Clean local state
     const updatedSketches = sketches.filter(s => s.id !== id);
     if (updatedSketches.length === 0) {
-      // Don't leave them with a broken blank screen
       const newId = Date.now().toString();
       updatedSketches.push({ id: newId, title: 'New Sketch', settingType: 'INT.', location: 'LOCATION', timeOfDay: 'DAY', tone: 'Absurdist', characters: '', characterProfiles: [], props: '', hook: '', escalation: '', ending: '', script: '' });
       setActiveSketchId(newId);
@@ -240,7 +236,6 @@ const App = () => {
     
     setSketchToDelete(null);
 
-    // 2. Clean cloud state aggressively
     if (user && isRealUser) {
       try {
         await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'sketches', id));
@@ -268,11 +263,38 @@ const App = () => {
   const updateChar = (charId, field, value) => updateSketch(activeSketchId, 'characterProfiles', activeProfiles.map(p => p.id === charId ? { ...p, [field]: value } : p));
   const removeChar = (charId) => updateSketch(activeSketchId, 'characterProfiles', activeProfiles.filter(p => p.id !== charId));
 
+  // FIX: The Image Downsampler. Prevents Firestore from choking on 12MB raw photos.
   const handleImageUpload = (shotId, event) => {
     const file = event.target.files?.[0];
     if (!file) return;
+
     const reader = new FileReader();
-    reader.onload = (e) => updateShot(shotId, 'image', e.target.result);
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        // Draw to an off-screen canvas to crush the file size
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+        const MAX_WIDTH = 800; // Standard storyboard width
+
+        if (width > MAX_WIDTH) {
+          height = Math.round((height * MAX_WIDTH) / width);
+          width = MAX_WIDTH;
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+
+        // Compress down to a 70% quality JPEG (turns a 10MB photo into a ~50KB string)
+        const compressedBase64 = canvas.toDataURL('image/jpeg', 0.7);
+        updateShot(shotId, 'image', compressedBase64);
+      };
+      img.src = e.target.result;
+    };
     reader.readAsDataURL(file);
   };
 
