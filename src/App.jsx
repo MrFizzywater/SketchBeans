@@ -190,12 +190,17 @@ const App = () => {
             </button>
           </div>
           
-          <p className="text-[9px] sm:text-[10px] text-zinc-600 uppercase tracking-widest font-bold">AI Features Require Login</p>
+          <div className="pt-2">
+            <p className="text-[9px] sm:text-[10px] text-zinc-600 uppercase tracking-widest font-bold mb-3">AI Features Require Login</p>
+            <p className="text-[9px] text-orange-500/80 font-bold max-w-[250px] mx-auto leading-tight border border-orange-500/20 bg-orange-500/5 p-2 rounded-lg">
+              <AlertCircle size={10} className="inline mr-1 -mt-0.5"/> 
+              If you opened this from a social app, tap the dots in the corner and select "Open in System Browser" to log in.
+            </p>
+          </div>
         </div>
       </div>
     );
   }
-  // ==========================================
 
   const activeSketch = sketches.find(s => s.id === activeSketchId) || sketches[0];
   const activeShots = shots.filter(s => s.sketchId === activeSketchId).sort((a, b) => a.number - b.number);
