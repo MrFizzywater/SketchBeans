@@ -289,7 +289,7 @@ const App = () => {
       try {
         const payload = { contents: [{ parts: [{ text: prompt }] }], systemInstruction: { parts: [{ text: systemPrompt }] } };
         if (isJson) payload.generationConfig = { responseMimeType: "application/json" };
-        const response = await fetch(`https://generativelanguage.googleapis.com/models/2.5-flash:generateContent?key=${apiKey}`, {
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
         });
         
