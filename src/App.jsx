@@ -82,7 +82,6 @@ const App = () => {
   const [isSyncing, setIsSyncing] = useState(false);
   const [dataLoaded, setDataLoaded] = useState(false);
   
-  // NEW: Store the visual column grid setting for the Storyboard Print view
   const [boardCols, setBoardCols] = useState(2);
   
   const apiKey = globalGeminiKey; 
@@ -179,10 +178,8 @@ const App = () => {
   const activeShots = shots.filter(s => s.sketchId === activeSketchId).sort((a, b) => a.number - b.number);
   const currentDisplayList = viewMode === 'shoot-plan' && shootPlan.length > 0 ? shootPlan : activeShots;
   
-  // Assemble the Master Scene Heading formatting
   const formattedSceneHeading = `${activeSketch.settingType || 'INT.'} ${activeSketch.location || activeSketch.sceneType || 'LOCATION'} - ${activeSketch.timeOfDay || 'DAY'}`;
 
-  // --- CHARACTER BIBLE DATA HANDLING ---
   const activeProfiles = activeSketch.characterProfiles || (activeSketch.characters ? activeSketch.characters.split(',').map((c, i) => ({ id: `migrated-${i}`, name: c.trim(), desc: '' })).filter(c => c.name) : []);
   const availableCharacters = activeProfiles.map(c => c.name);
   const richCharactersContext = activeProfiles.map(c => `${c.name}${c.desc ? ` (${c.desc})` : ''}`).join(' | ');
@@ -210,7 +207,6 @@ const App = () => {
   const updateSketch = (id, field, value) => setSketches(sketches.map(s => s.id === id ? { ...s, [field]: value } : s));
   const updateShot = (id, field, value) => setShots(shots.map(s => s.id === id ? { ...s, [field]: value } : s));
   
-  // --- CHARACTER BIBLE CRUD ---
   const addCharacter = () => updateSketch(activeSketchId, 'characterProfiles', [...activeProfiles, { id: Date.now().toString(), name: 'New Character', desc: '' }]);
   const updateChar = (charId, field, value) => updateSketch(activeSketchId, 'characterProfiles', activeProfiles.map(p => p.id === charId ? { ...p, [field]: value } : p));
   const removeChar = (charId) => updateSketch(activeSketchId, 'characterProfiles', activeProfiles.filter(p => p.id !== charId));
@@ -411,6 +407,28 @@ const App = () => {
     } catch(err) { console.error(err); } finally { setLoadingStates(prev => ({ ...prev, [`char-${charId}`]: false })); }
   };
 
+  // --- THE FIX: Clean Prompt Generator ---
+  const getShotPrompt = (shot) => {
+    const charContext = shot.shotCharacters?.length > 0 
+      ? shot.shotCharacters.map(n => {
+          const profile = activeProfiles.find(p => p.name === n);
+          return profile?.desc ? `${n} (${profile.desc})` : n;
+        }).join(', ') 
+      : richCharactersContext;
+
+    const location = shot.locationCaveat || formattedSceneHeading;
+    
+    let prompt = `Black and white graphite pencil storyboard sketch. A ${shot.type} shot of ${shot.subject}. Location: ${location}. `;
+    if (shot.action) prompt += `Action: ${shot.action} `;
+    if (charContext) prompt += `Featuring: ${charContext}. `;
+    if (shot.notes) prompt += `Visual Notes: ${shot.notes}. `;
+    
+    // Aggressive negative prompting to stop AI engines from drawing typography
+    prompt += `Cinematic composition, rough hand-drawn style. PURE ARTWORK ONLY. NO TEXT, NO WORDS, NO TITLES, NO WATERMARKS in the image.`;
+    
+    return prompt;
+  };
+
   // Safe mapping for Tailwind grid columns in print mode
   const gridColsClass = {
     1: 'grid-cols-1',
@@ -419,7 +437,6 @@ const App = () => {
     4: 'grid-cols-4',
   }[boardCols] || 'grid-cols-2';
 
-  // --- PRINT RENDERER (Handles both List and Visual Boards) ---
   if (viewMode === 'print' || viewMode === 'print-boards') {
     return (
       <div className="min-h-screen bg-white text-black p-6 md:p-12 font-serif overflow-y-auto">
@@ -456,7 +473,6 @@ const App = () => {
           </div>
 
           {viewMode === 'print' ? (
-            // --- TEXT-ONLY SHOOT PLAN ---
             <div className="space-y-4 overflow-x-auto">
               <table className="w-full text-left border-collapse min-w-[600px]">
                 <thead><tr className="border-b-2 border-black text-[10px] font-black uppercase tracking-widest"><th className="py-2 w-12">#</th><th className="py-2 w-24">Type</th><th className="py-2">Details & Action</th><th className="py-2 w-16">FX</th></tr></thead>
@@ -485,7 +501,6 @@ const App = () => {
               </table>
             </div>
           ) : (
-            // --- VISUAL STORYBOARD GRID ---
             <div className={`grid ${gridColsClass} gap-6 md:gap-8 w-full print:gap-4`}>
               {currentDisplayList.map((shot, idx) => (
                 <div key={shot.id} className="break-inside-avoid flex flex-col border-2 border-black rounded-lg overflow-hidden bg-white shadow-sm">
@@ -732,7 +747,10 @@ const App = () => {
                   </div>
                 )}
                 
-                {currentDisplayList.map((shot, index) => (
+                {currentDisplayList.map((shot, index) => {
+                  const currentPrompt = getShotPrompt(shot);
+                  
+                  return (
                   <div key={shot.id} className={`group bg-zinc-900/40 border ${shot.fx ? 'border-orange-500/40' : 'border-zinc-800'} rounded-[2rem] md:rounded-[3rem] p-5 md:p-10 hover:bg-zinc-900/60 transition-all relative overflow-hidden mb-6 md:mb-8`}>
                     <div className="absolute top-0 right-0 p-4 md:p-6 text-6xl md:text-9xl text-zinc-800/20 font-black pointer-events-none select-none z-0">{viewMode === 'shoot-plan' ? shot.shootOrderNumber : index + 1}</div>
                     
@@ -753,9 +771,9 @@ const App = () => {
                                 <div className="bg-zinc-900 border border-zinc-700 p-3 rounded-xl text-left relative animate-in fade-in zoom-in-95 duration-200 shadow-xl">
                                   <button onClick={() => setVisiblePromptId(null)} className="absolute top-2 right-2 p-1 text-zinc-500 hover:text-white bg-zinc-800 rounded-full"><X size={10} /></button>
                                   <p className="text-[9px] text-zinc-400 mb-2 font-mono pr-4 h-24 overflow-y-auto leading-relaxed select-all">
-                                    {`A rough black and white pencil sketch storyboard frame for a comedy sketch titled "${activeSketch.title}". Context: ${shot.locationCaveat || formattedSceneHeading}. Characters in frame: ${shot.shotCharacters?.length > 0 ? shot.shotCharacters.map(n => activeProfiles.find(p => p.name === n)?.desc ? `${n} (${activeProfiles.find(p => p.name === n).desc})` : n).join(', ') : richCharactersContext}. Action/Subject: A ${shot.type} shot of ${shot.subject}. Action: ${shot.action}. Notes: ${shot.notes}. Style: Traditional hand-drawn graphite pencil storyboard, rough sketch, cinematic framing.`}
+                                    {currentPrompt}
                                   </p>
-                                  <button onClick={() => copyPrompt(`A rough black and white pencil sketch storyboard frame for a comedy sketch titled "${activeSketch.title}". Context: ${shot.locationCaveat || formattedSceneHeading}. Characters in frame: ${shot.shotCharacters?.length > 0 ? shot.shotCharacters.map(n => activeProfiles.find(p => p.name === n)?.desc ? `${n} (${activeProfiles.find(p => p.name === n).desc})` : n).join(', ') : richCharactersContext}. Action/Subject: A ${shot.type} shot of ${shot.subject}. Action: ${shot.action}. Notes: ${shot.notes}. Style: Traditional hand-drawn graphite pencil storyboard, rough sketch, cinematic framing.`)} className="w-full bg-purple-600 hover:bg-purple-500 text-white text-[9px] font-black py-2 rounded flex items-center justify-center gap-1 transition-colors"><Copy size={10} /> COPY PROMPT</button>
+                                  <button onClick={() => copyPrompt(currentPrompt)} className="w-full bg-purple-600 hover:bg-purple-500 text-white text-[9px] font-black py-2 rounded flex items-center justify-center gap-1 transition-colors"><Copy size={10} /> COPY PROMPT</button>
                                 </div>
                               ) : (
                                 <div className="flex flex-col items-center gap-3">
@@ -830,7 +848,7 @@ const App = () => {
                       </div>
                     </div>
                   </div>
-                ))}
+                )})}
               </>
             )}
 
