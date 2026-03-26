@@ -1,11 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { 
   Plus, Trash2, Camera, FileText, ChevronRight, Layout, 
-  CheckCircle2, AlertCircle, Wand2, Printer, Sparkles, 
-  BrainCircuit, Loader2, Quote, Zap, ArrowLeft, ImageIcon, 
-  X, Download, Upload, Save, Maximize2, Map, ScrollText, 
-  VenetianMask, ChevronUp, ChevronDown, Clapperboard, 
-  UserPlus, ArrowUp, ArrowDown, Cloud, CloudOff, GitBranch, LogOut, Lock, Copy, Menu
+  AlertCircle, Wand2, Printer, Sparkles, 
+  Loader2, Quote, Zap, ArrowLeft, Image as ImageIcon, 
+  X, Download, Upload, Save, Maximize2, Map, 
+  Smile, ChevronUp, ChevronDown, Film, 
+  UserPlus, ArrowUp, ArrowDown, Cloud, GitBranch, LogOut, Lock, Copy, Menu,
+  ScrollText, VenetianMask, Clapperboard
 } from 'lucide-react';
 
 // --- FIREBASE IMPORTS ---
@@ -77,11 +78,15 @@ const App = () => {
   const [zoomedImage, setZoomedImage] = useState(null);
   const [isDetailsExpanded, setIsDetailsExpanded] = useState(window.innerWidth > 768);
   const [visiblePromptId, setVisiblePromptId] = useState(null);
+  
+  // NEW: State for the custom delete confirmation modal
   const [sketchToDelete, setSketchToDelete] = useState(null);
+  
   const fileInputRef = useRef(null);
 
   const [isSyncing, setIsSyncing] = useState(false);
   const isInitialLoad = useRef({ sketches: true, shots: true });
+  
   const [boardCols, setBoardCols] = useState(2);
   
   const apiKey = globalGeminiKey; 
@@ -92,7 +97,7 @@ const App = () => {
       if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
         await signInWithCustomToken(auth, __initial_auth_token).catch(console.error);
       } else {
-        // FIX: Silently catch the anonymous auth failure so it doesn't break the app
+        // Silently catch the anonymous auth failure so it doesn't break the app
         await signInAnonymously(auth).catch(() => {});
       }
     };
@@ -129,6 +134,7 @@ const App = () => {
         if (!snap.empty) {
           const loaded = snap.docs.map(d => ({id: d.id, ...d.data()}));
           setSketches(loaded);
+          // Align the active viewport with the newly downloaded cloud IDs so shots don't disappear
           setActiveSketchId(prevId => {
             const exists = loaded.find(s => s.id === prevId);
             return exists ? prevId : loaded[0].id;
@@ -263,7 +269,6 @@ const App = () => {
   const updateChar = (charId, field, value) => updateSketch(activeSketchId, 'characterProfiles', activeProfiles.map(p => p.id === charId ? { ...p, [field]: value } : p));
   const removeChar = (charId) => updateSketch(activeSketchId, 'characterProfiles', activeProfiles.filter(p => p.id !== charId));
 
-  // FIX: The Image Downsampler. Prevents Firestore from choking on 12MB raw photos.
   const handleImageUpload = (shotId, event) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -289,7 +294,7 @@ const App = () => {
         const ctx = canvas.getContext('2d');
         ctx.drawImage(img, 0, 0, width, height);
 
-        // Compress down to a 70% quality JPEG (turns a 10MB photo into a ~50KB string)
+        // Compress down to a 70% quality JPEG
         const compressedBase64 = canvas.toDataURL('image/jpeg', 0.7);
         updateShot(shotId, 'image', compressedBase64);
       };
@@ -401,21 +406,40 @@ const App = () => {
 
   const callGemini = async (prompt, systemPrompt = "", isJson = false) => {
     if (!apiKey) throw new Error("API Key is missing.");
-    const maxRetries = 5; let delay = 1000;
+    const maxRetries = 5; let delay = 2000; 
+    
     for (let i = 0; i < maxRetries; i++) {
       try {
         const payload = { contents: [{ parts: [{ text: prompt }] }], systemInstruction: { parts: [{ text: systemPrompt }] } };
         if (isJson) payload.generationConfig = { responseMimeType: "application/json" };
+        
         const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
         });
+        
+        if (response.status === 429) {
+          throw new Error("429_TOO_MANY_REQUESTS");
+        }
         if (!response.ok) throw new Error(`Google API threw a ${response.status}.`);
+        
         const result = await response.json();
         const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
         return isJson ? JSON.parse(text) : text;
+        
       } catch (error) {
-        if (i === maxRetries - 1) { alert(`AI Error: ${error.message}`); throw error; }
-        await new Promise(r => setTimeout(r, delay)); delay *= 2;
+        if (error.message === "429_TOO_MANY_REQUESTS") {
+          if (i === maxRetries - 1) { 
+            alert("Union Break! The AI is hyperventilating (Error 429: Too Many Requests). Google limits free-tier API speeds. Give it about 60 seconds to catch its breath and try again."); 
+            throw error; 
+          }
+        } else {
+          if (i === maxRetries - 1) { 
+            alert(`AI Error: ${error.message}`); 
+            throw error; 
+          }
+        }
+        await new Promise(r => setTimeout(r, delay)); 
+        delay *= 2; 
       }
     }
   };
