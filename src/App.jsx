@@ -301,8 +301,6 @@ const App = () => {
   };
 
   const downloadImage = (imageUrl, shotNumber) => {
-    // If it's a raw URL (like our open API fallback), cross-origin downloads get blocked. 
-    // Opening it in a new tab allows the user to safely view and save it.
     if (imageUrl.startsWith('http')) {
       window.open(imageUrl, '_blank');
     } else {
@@ -324,7 +322,6 @@ const App = () => {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
         });
         
-        // Safety net to catch 403s before they crash the JSON parser
         if (!response.ok) {
           throw new Error(`Google API threw a ${response.status}. Your API key might be missing, invalid, or lacking permissions.`);
         }
@@ -373,7 +370,8 @@ const App = () => {
   const generateScript = async () => {
     setLoadingStates(prev => ({ ...prev, script: true }));
     try {
-      const systemPrompt = `You are an expert comedy writer specializing in ${activeSketch.tone} humor. Turn this shot list and outline into a formatted script. Use standard screenplay format. Make it funny, coherent, and match the specified tone perfectly.`;
+      // FIX: Aggressively forbid HTML tags so the textarea output is clean.
+      const systemPrompt = `You are an expert comedy writer specializing in ${activeSketch.tone} humor. Turn this shot list and outline into a formatted script. Write in PLAIN TEXT standard screenplay format. CRITICAL: DO NOT use any HTML tags like <center> or <b>. Use ALL CAPS for scene headings and character names. Use standard line breaks and spacing to format action lines and dialogue.`;
       const prompt = `Title: ${activeSketch.title}\nTone: ${activeSketch.tone}\nCharacters: ${activeSketch.characters}\nProps: ${activeSketch.props}\nHook: ${activeSketch.hook}\nEscalation: ${activeSketch.escalation}\nEnding: ${activeSketch.ending}\n\nShot List:\n${activeShots.map(s => `Shot ${s.number} (${s.type}): ${s.subject}\nAction: ${s.action}\nNotes: ${s.notes}\nDialogue: ${s.dialogue}`).join('\n\n')}`;
       const scriptContent = await callGemini(prompt, systemPrompt, false);
       if (scriptContent) {
