@@ -4,7 +4,7 @@ import {
   AlertCircle, Wand2, Printer, Sparkles, 
   Loader2, Quote, Zap, ArrowLeft, Image as ImageIcon, 
   X, Download, Upload, Save, Maximize2, Map, 
-  Smile, ChevronUp, ChevronDown, Film, 
+  ChevronUp, ChevronDown, 
   UserPlus, ArrowUp, ArrowDown, Cloud, GitBranch, LogOut, Lock, Copy, Menu,
   ScrollText, VenetianMask, Clapperboard
 } from 'lucide-react';
@@ -16,7 +16,7 @@ import {
   GoogleAuthProvider, GithubAuthProvider, onAuthStateChanged, signOut 
 } from 'firebase/auth';
 import { 
-  getFirestore, collection, doc, setDoc, onSnapshot, getDocs, deleteDoc 
+  getFirestore, collection, doc, setDoc, onSnapshot, deleteDoc 
 } from 'firebase/firestore';
 
 // --- ENVIRONMENT INITIALIZATION & SAFE KEY EXTRACTION ---
@@ -59,7 +59,6 @@ const App = () => {
       id: '1', title: 'The Hot Dog Suit Incident', 
       settingType: 'INT.', location: 'FUNERAL HOME', timeOfDay: 'DAY',
       tone: 'Disruptive / Cringe', 
-      characters: '', 
       characterProfiles: [
         { id: 'c1', name: 'Greg', desc: 'Sweaty, deeply defensive. Wearing a full-body hot dog suit with a broken industrial zipper.' },
         { id: 'c2', name: 'The Hot Dog Man', desc: 'A rival mascot who takes his job way too seriously.' },
@@ -78,16 +77,12 @@ const App = () => {
   const [zoomedImage, setZoomedImage] = useState(null);
   const [isDetailsExpanded, setIsDetailsExpanded] = useState(window.innerWidth > 768);
   const [visiblePromptId, setVisiblePromptId] = useState(null);
-  
   const [sketchToDelete, setSketchToDelete] = useState(null);
-  
   const fileInputRef = useRef(null);
 
   const [isSyncing, setIsSyncing] = useState(false);
   const isInitialLoad = useRef({ sketches: true, shots: true });
-  
   const [boardCols, setBoardCols] = useState(2);
-  
   const apiKey = globalGeminiKey; 
 
   // --- STRICT AUTHENTICATION BOOT ---
@@ -201,9 +196,10 @@ const App = () => {
   const activeShots = shots.filter(s => s.sketchId === activeSketchId).sort((a, b) => a.number - b.number);
   const currentDisplayList = viewMode === 'shoot-plan' && shootPlan.length > 0 ? shootPlan : activeShots;
   
-  const formattedSceneHeading = `${activeSketch.settingType || 'INT.'} ${activeSketch.location || activeSketch.sceneType || 'LOCATION'} - ${activeSketch.timeOfDay || 'DAY'}`;
+  const formattedSceneHeading = `${activeSketch?.settingType || 'INT.'} ${activeSketch?.location || 'LOCATION'} - ${activeSketch?.timeOfDay || 'DAY'}`;
 
-  const activeProfiles = activeSketch.characterProfiles || (activeSketch.characters ? activeSketch.characters.split(',').map((c, i) => ({ id: `migrated-${i}`, name: c.trim(), desc: '' })).filter(c => c.name) : []);
+  // Safe fallback to prevent crashes if characters field is missing
+  const activeProfiles = activeSketch?.characterProfiles || [];
   const availableCharacters = activeProfiles.map(c => c.name);
   const richCharactersContext = activeProfiles.map(c => `${c.name}${c.desc ? ` (${c.desc})` : ''}`).join(' | ');
 
@@ -227,7 +223,7 @@ const App = () => {
     const updatedSketches = sketches.filter(s => s.id !== id);
     if (updatedSketches.length === 0) {
       const newId = Date.now().toString();
-      updatedSketches.push({ id: newId, title: 'New Sketch', settingType: 'INT.', location: 'LOCATION', timeOfDay: 'DAY', tone: 'Absurdist', characters: '', characterProfiles: [], props: '', hook: '', escalation: '', ending: '', script: '' });
+      updatedSketches.push({ id: newId, title: 'New Sketch', settingType: 'INT.', location: 'LOCATION', timeOfDay: 'DAY', tone: 'Absurdist', characterProfiles: [], props: '', hook: '', escalation: '', ending: '', script: '' });
       setActiveSketchId(newId);
     } else if (activeSketchId === id) {
       setActiveSketchId(updatedSketches[0].id);
@@ -266,6 +262,7 @@ const App = () => {
   const updateChar = (charId, field, value) => updateSketch(activeSketchId, 'characterProfiles', activeProfiles.map(p => p.id === charId ? { ...p, [field]: value } : p));
   const removeChar = (charId) => updateSketch(activeSketchId, 'characterProfiles', activeProfiles.filter(p => p.id !== charId));
 
+  // The Downsampler - compresses big raw files into 800px 70% jpegs
   const handleImageUpload = (shotId, event) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -338,7 +335,7 @@ const App = () => {
   };
 
   const exportSnapshot = () => {
-    const data = { version: "1.5", timestamp: new Date().toISOString(), sketches, shots };
+    const data = { version: "1.6", timestamp: new Date().toISOString(), sketches, shots };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a'); link.href = url; link.download = `SketchShot_Backup_${new Date().getTime()}.json`;
@@ -399,7 +396,8 @@ const App = () => {
     }
   };
 
-  // --- UPGRADED AI ENGINE: Bumping to the Pro tier for heavier reasoning tasks ---
+  // --- THE AI ENGINE ---
+  // Using 2.5-Flash for speed and generous free-tier limits, wrapped in a 429 shock absorber
   const callGemini = async (prompt, systemPrompt = "", isJson = false) => {
     if (!apiKey) throw new Error("API Key is missing.");
     const maxRetries = 5; let delay = 2000; 
@@ -409,13 +407,12 @@ const App = () => {
         const payload = { contents: [{ parts: [{ text: prompt }] }], systemInstruction: { parts: [{ text: systemPrompt }] } };
         if (isJson) payload.generationConfig = { responseMimeType: "application/json" };
         
-        // UPGRADED ENDPOINT
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=${apiKey}`, {
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
         });
         
         if (response.status === 429) {
-          throw new Error("429_TOO_MANY_REQUESTS");
+          throw new Error("429");
         }
         if (!response.ok) throw new Error(`Google API threw a ${response.status}.`);
         
@@ -424,16 +421,13 @@ const App = () => {
         return isJson ? JSON.parse(text) : text;
         
       } catch (error) {
-        if (error.message === "429_TOO_MANY_REQUESTS") {
-          if (i === maxRetries - 1) { 
-            alert("Union Break! The AI is hyperventilating (Error 429: Too Many Requests). Google limits free-tier API speeds. Give it about 60 seconds to catch its breath and try again."); 
-            throw error; 
+        if (i === maxRetries - 1) { 
+          if (error.message === "429") {
+             alert("Union Break! The AI is rate-limited. Give it 30 seconds to catch its breath and try again."); 
+          } else {
+             alert(`AI Error: ${error.message}`); 
           }
-        } else {
-          if (i === maxRetries - 1) { 
-            alert(`AI Error: ${error.message}`); 
-            throw error; 
-          }
+          throw error; 
         }
         await new Promise(r => setTimeout(r, delay)); 
         delay *= 2; 
@@ -441,13 +435,12 @@ const App = () => {
     }
   };
 
-  // --- AI TOOLING ---
   const generateAISHots = async () => {
     setLoadingStates(prev => ({ ...prev, genShots: true }));
     try {
       const typeList = SHOT_TYPES.join(', ');
       const systemPrompt = `Expert comedy director. Generate JSON array of exactly 8 shots. Use these EXACT keys: "type" (MUST BE EXACTLY ONE OF: ${typeList}), "subject", "action", "notes", "dialogue", "shotCharacters" (array of strings).`;
-      const prompt = `TONE: ${activeSketch.tone}\nSCENE: ${formattedSceneHeading}\nCHARACTERS AVAILABLE: ${richCharactersContext}\nHOOK: ${activeSketch.hook}\nESCALATION: ${activeSketch.escalation}\nENDING: ${activeSketch.ending}`;
+      const prompt = `TONE: ${activeSketch?.tone}\nSCENE: ${formattedSceneHeading}\nCHARACTERS AVAILABLE: ${richCharactersContext}\nHOOK: ${activeSketch?.hook}\nESCALATION: ${activeSketch?.escalation}\nENDING: ${activeSketch?.ending}`;
       const newShotsData = await callGemini(prompt, systemPrompt, true);
       if (newShotsData) {
         setShots([...shots, ...newShotsData.map((s, idx) => ({ 
@@ -465,7 +458,7 @@ const App = () => {
       const systemPrompt = `Expert comedy director. Generate exactly ONE new shot to continue the sequence. Return a SINGLE JSON OBJECT with these EXACT keys: "type" (MUST BE EXACTLY ONE OF: ${typeList}), "subject", "action", "notes", "dialogue", "shotCharacters" (array of strings).`;
       
       const recentShots = activeShots.slice(-3).map(s => `Shot ${s.number}: [${s.type}] ${s.subject} - ${s.action}`).join('\n');
-      const prompt = `TONE: ${activeSketch.tone}\nSCENE: ${formattedSceneHeading}\nCHARACTERS: ${richCharactersContext}\nHOOK: ${activeSketch.hook}\nRECENT SHOTS:\n${recentShots}\n\nCreate the NEXT logical shot to build the comedy.`;
+      const prompt = `TONE: ${activeSketch?.tone}\nSCENE: ${formattedSceneHeading}\nCHARACTERS: ${richCharactersContext}\nHOOK: ${activeSketch?.hook}\nRECENT SHOTS:\n${recentShots}\n\nCreate the NEXT logical shot to build the comedy.`;
 
       const newShotData = await callGemini(prompt, systemPrompt, true);
       
@@ -489,7 +482,7 @@ const App = () => {
     setLoadingStates(prev => ({ ...prev, optimizing: true }));
     try {
       const systemPrompt = `Expert 1st AD. Reorder shots into most efficient SHOOT ORDER. Group by Location Caveats, Shot Types, and active Characters. Return JSON array of objects with 'id' and 'reason'.`;
-      const prompt = `Scene: ${activeSketch.title} (${formattedSceneHeading})\nShots: ${activeShots.map(s => `ID: ${s.id}, Type: ${s.type}, Subject: ${s.subject}, Location: ${s.locationCaveat || 'Base'}, Chars: ${(s.shotCharacters||[]).join(',')}`).join('\n')}`;
+      const prompt = `Scene: ${activeSketch?.title} (${formattedSceneHeading})\nShots: ${activeShots.map(s => `ID: ${s.id}, Type: ${s.type}, Subject: ${s.subject}, Location: ${s.locationCaveat || 'Base'}, Chars: ${(s.shotCharacters||[]).join(',')}`).join('\n')}`;
       const optimizedIds = await callGemini(prompt, systemPrompt, true);
       if (optimizedIds) {
         setShootPlan(optimizedIds.map((item, idx) => ({ ...activeShots.find(s => s.id === item.id), shootOrderNumber: idx + 1, optimizationReason: item.reason })));
@@ -501,8 +494,8 @@ const App = () => {
   const generateScript = async () => {
     setLoadingStates(prev => ({ ...prev, script: true }));
     try {
-      const systemPrompt = `You are an expert comedy writer specializing in ${activeSketch.tone} humor. Turn this shot list and outline into a formatted script. Write in PLAIN TEXT standard screenplay format. CRITICAL: DO NOT use any HTML tags like <center> or <b>. Use ALL CAPS for scene headings and character names. Use standard line breaks and spacing to format action lines and dialogue.`;
-      const prompt = `Title: ${activeSketch.title}\nTone: ${activeSketch.tone}\nScene Heading: ${formattedSceneHeading}\nCharacter Profiles: ${richCharactersContext}\nProps: ${activeSketch.props}\nHook: ${activeSketch.hook}\nEscalation: ${activeSketch.escalation}\nEnding: ${activeSketch.ending}\n\nShot List:\n${activeShots.map(s => `Shot ${s.number} (${s.type}): ${s.subject}\nAction: ${s.action}\nNotes: ${s.notes}\nDialogue: ${s.dialogue}`).join('\n\n')}`;
+      const systemPrompt = `You are an expert comedy writer specializing in ${activeSketch?.tone} humor. Turn this shot list and outline into a formatted script. Write in PLAIN TEXT standard screenplay format. CRITICAL: DO NOT use any HTML tags like <center> or <b>. Use ALL CAPS for scene headings and character names. Use standard line breaks and spacing to format action lines and dialogue.`;
+      const prompt = `Title: ${activeSketch?.title}\nTone: ${activeSketch?.tone}\nScene Heading: ${formattedSceneHeading}\nCharacter Profiles: ${richCharactersContext}\nProps: ${activeSketch?.props}\nHook: ${activeSketch?.hook}\nEscalation: ${activeSketch?.escalation}\nEnding: ${activeSketch?.ending}\n\nShot List:\n${activeShots.map(s => `Shot ${s.number} (${s.type}): ${s.subject}\nAction: ${s.action}\nNotes: ${s.notes}\nDialogue: ${s.dialogue}`).join('\n\n')}`;
       const scriptContent = await callGemini(prompt, systemPrompt, false);
       if (scriptContent) {
         updateSketch(activeSketchId, 'script', scriptContent);
@@ -511,7 +504,8 @@ const App = () => {
     } catch (err) { console.error(err); } finally { setLoadingStates(prev => ({ ...prev, script: false })); }
   };
 
-  // THE YES, AND FIX: Using context to build on existing inputs
+  // --- THE "YES, AND" FIX ---
+  // Tells the AI to embrace existing text and escalate it, rather than overwriting it.
   const generateTextAssist = async (shotId, field, rolePrompt, contextPrompt) => {
     setLoadingStates(prev => ({ ...prev, [`${field}-${shotId}`]: true }));
     const shot = shots.find(s => s.id === shotId);
@@ -529,26 +523,26 @@ const App = () => {
   const generateNarrativeBeat = async (beatType) => {
     setLoadingStates(prev => ({ ...prev, [beatType]: true }));
     try {
-      const systemPrompt = `Brilliant comedy writer (${activeSketch.tone || 'comedic'} humor). Provide a punchy, creative ${beatType} for the sketch. Keep it under 3 sentences. Punch it up if text exists.`;
-      const prompt = `Title: ${activeSketch.title}\nScene Heading: ${formattedSceneHeading}\nCharacter Profiles: ${richCharactersContext}\nCurrent Hook: ${activeSketch.hook}\nCurrent Escalation: ${activeSketch.escalation}\nCurrent Ending: ${activeSketch.ending}\nTask: Write/Improve the ${beatType.toUpperCase()}.`;
+      const systemPrompt = `Brilliant comedy writer (${activeSketch?.tone || 'comedic'} humor). Provide a punchy, creative ${beatType} for the sketch. Keep it under 3 sentences. Punch it up if text exists.`;
+      const prompt = `Title: ${activeSketch?.title}\nScene Heading: ${formattedSceneHeading}\nCharacter Profiles: ${richCharactersContext}\nCurrent Hook: ${activeSketch?.hook}\nCurrent Escalation: ${activeSketch?.escalation}\nCurrent Ending: ${activeSketch?.ending}\nTask: Write/Improve the ${beatType.toUpperCase()}.`;
       const newBeat = await callGemini(prompt, systemPrompt, false);
       if (newBeat) updateSketch(activeSketchId, beatType, newBeat.trim());
     } catch (err) { console.error(err); } finally { setLoadingStates(prev => ({ ...prev, [beatType]: false })); }
   };
 
-  // THE YES, AND FIX: Preserving existing character flaws
+  // --- THE "YES, AND" FIX FOR CHARACTERS ---
   const generateCharDesc = async (charId) => {
     setLoadingStates(prev => ({ ...prev, [`char-${charId}`]: true }));
     const char = activeProfiles.find(c => c.id === charId);
     try {
       const existing = char.desc ? `CURRENT DETAILS (YES, AND... THESE): "${char.desc}"\n` : '';
-      const prompt = `Scene: ${formattedSceneHeading}\nSketch Hook: ${activeSketch.hook}\nCharacter Name: ${char.name}\n${existing}Task: Write a 1-2 sentence absurd, highly specific character description, vibe, or fatal flaw. If current details exist, KEEP them and ESCALATE them. Think disruptive/cringe comedy.`;
-      const newDesc = await callGemini(prompt, `Expert comedy writer (${activeSketch.tone || 'comedic'} humor).`, false);
+      const prompt = `Scene: ${formattedSceneHeading}\nSketch Hook: ${activeSketch?.hook}\nCharacter Name: ${char.name}\n${existing}Task: Write a 1-2 sentence absurd, highly specific character description, vibe, or fatal flaw. If current details exist, KEEP them and ESCALATE them. Think disruptive/cringe comedy.`;
+      const newDesc = await callGemini(prompt, `Expert comedy writer (${activeSketch?.tone || 'comedic'} humor).`, false);
       if (newDesc) updateChar(charId, 'desc', newDesc.trim());
     } catch(err) { console.error(err); } finally { setLoadingStates(prev => ({ ...prev, [`char-${charId}`]: false })); }
   };
 
-  // THE FIX: Allow Colored Pencil output in the image generation prompt
+  // --- COLORED PENCIL PROMPT FIX ---
   const getShotPrompt = (shot) => {
     const charContext = shot.shotCharacters?.length > 0 
       ? shot.shotCharacters.map(n => {
@@ -600,13 +594,13 @@ const App = () => {
 
         <div className="max-w-6xl mx-auto space-y-8 mt-16 md:mt-0">
           <div className="border-b-4 border-black pb-4 flex flex-col md:flex-row justify-between md:items-end gap-2">
-            <h1 className="text-3xl md:text-4xl font-black uppercase tracking-tighter leading-none">{activeSketch.title}</h1>
+            <h1 className="text-3xl md:text-4xl font-black uppercase tracking-tighter leading-none">{activeSketch?.title}</h1>
             <div className="text-left md:text-right text-[10px] font-bold uppercase">{new Date().toLocaleDateString()}</div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-8 border-b border-black pb-4 text-sm">
             <p><strong>SCENE:</strong> {formattedSceneHeading}</p>
             <p><strong>CHARACTERS:</strong> {availableCharacters.join(', ') || 'N/A'}</p>
-            <p className="md:col-span-2"><strong>PROPS:</strong> {activeSketch.props || 'None'}</p>
+            <p className="md:col-span-2"><strong>PROPS:</strong> {activeSketch?.props || 'None'}</p>
           </div>
 
           {viewMode === 'print' ? (
@@ -771,7 +765,7 @@ const App = () => {
                 <div className="flex-1 w-full min-w-0">
                   <div className="flex items-center gap-3">
                     <button onClick={() => setSidebarOpen(true)} className="md:hidden text-zinc-400 hover:text-white shrink-0"><Menu size={24}/></button>
-                    <input value={activeSketch?.title} onChange={(e) => updateSketch(activeSketchId, 'title', e.target.value)} className="bg-transparent text-2xl md:text-5xl font-black focus:outline-none w-full tracking-tighter truncate" placeholder="Title..." />
+                    <input value={activeSketch?.title || ''} onChange={(e) => updateSketch(activeSketchId, 'title', e.target.value)} className="bg-transparent text-2xl md:text-5xl font-black focus:outline-none w-full tracking-tighter truncate" placeholder="Title..." />
                   </div>
                   
                   <div className="flex flex-wrap gap-2 mt-4">
@@ -811,27 +805,15 @@ const App = () => {
               {isDetailsExpanded && (
                 <div className="space-y-6 md:space-y-8 animate-in fade-in slide-in-from-top-4 duration-300 mt-6 md:mt-8 w-full">
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6 pt-4 border-t border-zinc-800/50">
-                    <div className="space-y-2 w-full">
-                      <label className="text-[10px] font-black text-orange-500 uppercase tracking-widest flex items-center justify-between">
-                        <span className="flex items-center gap-2"><div className="w-1.5 h-1.5 bg-orange-500 rounded-full" /> The Hook</span>
-                        <button onClick={() => generateNarrativeBeat('hook')} disabled={!isRealUser} className="p-1 hover:bg-orange-500/20 rounded transition-colors disabled:opacity-50">{!isRealUser ? <Lock size={12} className="text-orange-500" /> : <Sparkles size={12} className="text-orange-500" />}</button>
-                      </label>
-                      <textarea value={activeSketch?.hook} onChange={(e) => updateSketch(activeSketchId, 'hook', e.target.value)} className="w-full bg-zinc-900/50 border border-zinc-800 rounded-xl p-3 text-sm focus:outline-none min-h-[80px] resize-none" />
-                    </div>
-                    <div className="space-y-2 w-full">
-                      <label className="text-[10px] font-black text-purple-500 uppercase tracking-widest flex items-center justify-between">
-                        <span className="flex items-center gap-2"><div className="w-1.5 h-1.5 bg-purple-500 rounded-full" /> The Escalation</span>
-                        <button onClick={() => generateNarrativeBeat('escalation')} disabled={!isRealUser} className="p-1 hover:bg-purple-500/20 rounded transition-colors disabled:opacity-50">{!isRealUser ? <Lock size={12} className="text-purple-500" /> : <Sparkles size={12} className="text-purple-500" />}</button>
-                      </label>
-                      <textarea value={activeSketch?.escalation} onChange={(e) => updateSketch(activeSketchId, 'escalation', e.target.value)} className="w-full bg-zinc-900/50 border border-zinc-800 rounded-xl p-3 text-sm focus:outline-none min-h-[80px] resize-none" />
-                    </div>
-                    <div className="space-y-2 w-full">
-                      <label className="text-[10px] font-black text-green-500 uppercase tracking-widest flex items-center justify-between">
-                        <span className="flex items-center gap-2"><div className="w-1.5 h-1.5 bg-green-500 rounded-full" /> The Ending</span>
-                        <button onClick={() => generateNarrativeBeat('ending')} disabled={!isRealUser} className="p-1 hover:bg-green-500/20 rounded transition-colors disabled:opacity-50">{!isRealUser ? <Lock size={12} className="text-green-500" /> : <Sparkles size={12} className="text-green-500" />}</button>
-                      </label>
-                      <textarea value={activeSketch?.ending} onChange={(e) => updateSketch(activeSketchId, 'ending', e.target.value)} className="w-full bg-zinc-900/50 border border-zinc-800 rounded-xl p-3 text-sm focus:outline-none min-h-[80px] resize-none" />
-                    </div>
+                    {['hook', 'escalation', 'ending'].map((beat) => (
+                      <div key={beat} className="space-y-2">
+                        <label className="text-[10px] font-black text-orange-500 uppercase tracking-widest flex items-center justify-between">
+                          <span className="flex items-center gap-2"><div className="w-1.5 h-1.5 bg-orange-500 rounded-full" /> The {beat}</span>
+                          <button onClick={() => generateNarrativeBeat(beat)} disabled={!isRealUser} className="p-1 hover:bg-orange-500/20 rounded transition-colors disabled:opacity-50">{!isRealUser ? <Lock size={12} className="text-orange-500" /> : <Sparkles size={12} className="text-orange-500" />}</button>
+                        </label>
+                        <textarea value={activeSketch?.[beat] || ''} onChange={(e) => updateSketch(activeSketchId, beat, e.target.value)} className="w-full bg-zinc-900/50 border border-zinc-800 rounded-xl p-3 text-sm focus:outline-none min-h-[80px] resize-none" />
+                      </div>
+                    ))}
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 bg-zinc-900/20 p-4 rounded-2xl border border-zinc-800 w-full">
@@ -850,13 +832,13 @@ const App = () => {
                     </div>
                     <div className="space-y-1">
                       <span className="text-[9px] font-black text-zinc-600 uppercase flex items-center gap-1"><VenetianMask size={10}/> Tone</span>
-                      <select value={activeSketch?.tone} onChange={(e) => updateSketch(activeSketchId, 'tone', e.target.value)} className="w-full bg-zinc-950/50 border border-zinc-800 rounded-xl p-2.5 text-sm focus:outline-none font-bold cursor-pointer [&>option]:bg-zinc-900">
+                      <select value={activeSketch?.tone || 'Absurdist'} onChange={(e) => updateSketch(activeSketchId, 'tone', e.target.value)} className="w-full bg-zinc-950/50 border border-zinc-800 rounded-xl p-2.5 text-sm focus:outline-none font-bold cursor-pointer [&>option]:bg-zinc-900">
                         {TONES.map(t => <option key={t} value={t}>{t}</option>)}
                       </select>
                     </div>
                     <div className="space-y-1">
                       <span className="text-[9px] font-black text-zinc-600 uppercase">Key Props</span>
-                      <input value={activeSketch?.props} onChange={(e) => updateSketch(activeSketchId, 'props', e.target.value)} className="w-full bg-zinc-950/50 border border-zinc-800 rounded-xl p-2 text-sm focus:outline-none font-bold italic h-10" />
+                      <input value={activeSketch?.props || ''} onChange={(e) => updateSketch(activeSketchId, 'props', e.target.value)} className="w-full bg-zinc-950/50 border border-zinc-800 rounded-xl p-2 text-sm focus:outline-none font-bold italic h-10" />
                     </div>
                   </div>
 
@@ -873,10 +855,10 @@ const App = () => {
                           <button onClick={() => removeChar(char.id)} className="absolute top-3 right-3 p-1.5 bg-zinc-950/50 rounded-lg text-zinc-600 hover:text-red-400 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity border border-zinc-800"><Trash2 size={12} /></button>
                           <div className="flex items-center gap-2 pr-8">
                              <UserPlus size={14} className="text-green-500/50" />
-                             <input value={char.name} onChange={(e) => updateChar(char.id, 'name', e.target.value)} placeholder="Character Name" className="bg-transparent text-sm font-black focus:outline-none text-zinc-200 w-full" />
+                             <input value={char.name || ''} onChange={(e) => updateChar(char.id, 'name', e.target.value)} placeholder="Character Name" className="bg-transparent text-sm font-black focus:outline-none text-zinc-200 w-full" />
                           </div>
                           <div className="relative">
-                            <textarea value={char.desc} onChange={(e) => updateChar(char.id, 'desc', e.target.value)} placeholder="Vibe, wardrobe, fatal flaw..." className="w-full bg-zinc-950/50 rounded-xl p-3 text-xs text-zinc-400 resize-none focus:outline-none border border-zinc-800/50 focus:border-green-500/30 h-20" />
+                            <textarea value={char.desc || ''} onChange={(e) => updateChar(char.id, 'desc', e.target.value)} placeholder="Vibe, wardrobe, fatal flaw..." className="w-full bg-zinc-950/50 rounded-xl p-3 text-xs text-zinc-400 resize-none focus:outline-none border border-zinc-800/50 focus:border-green-500/30 h-20" />
                             <button onClick={() => generateCharDesc(char.id)} disabled={!isRealUser || loadingStates[`char-${char.id}`]} className="absolute bottom-2 right-2 p-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-400 hover:text-green-400 transition-colors disabled:opacity-50" title="Generate character flaw">
                               {loadingStates[`char-${char.id}`] ? <Loader2 size={10} className="animate-spin text-green-500" /> : (!isRealUser ? <Lock size={10} /> : <Sparkles size={10} />)}
                             </button>
@@ -953,7 +935,7 @@ const App = () => {
                         </div>
                         <div className="flex flex-col gap-2 w-full">
                           <div className="flex gap-2 w-full">
-                            <select value={shot.type} onChange={(e) => updateShot(shot.id, 'type', e.target.value)} className="flex-1 w-full bg-zinc-800 border border-zinc-700 rounded-xl p-3 md:p-2.5 text-xs font-bold focus:ring-1 ring-orange-500 appearance-none">{SHOT_TYPES.map(type => <option key={type} value={type}>{type}</option>)}</select>
+                            <select value={shot.type || 'Medium'} onChange={(e) => updateShot(shot.id, 'type', e.target.value)} className="flex-1 w-full bg-zinc-800 border border-zinc-700 rounded-xl p-3 md:p-2.5 text-xs font-bold focus:ring-1 ring-orange-500 appearance-none">{SHOT_TYPES.map(type => <option key={type} value={type}>{type}</option>)}</select>
                             <button onClick={() => setShots(shots.map(s => s.id === shot.id ? {...s, fx: !s.fx} : s))} className={`px-4 py-3 md:py-2 rounded-xl text-[10px] font-black border ${shot.fx ? 'bg-orange-600 text-white border-orange-400' : 'bg-zinc-800 text-zinc-500 border-zinc-700'}`}>FX</button>
                           </div>
                           <div className="flex items-center bg-zinc-950/50 border border-zinc-800/50 rounded-xl px-3 py-3 md:py-2 w-full"><Map size={12} className="text-zinc-500 mr-2 shrink-0" /><input value={shot.locationCaveat || ''} onChange={(e) => updateShot(shot.id, 'locationCaveat', e.target.value)} placeholder="Location caveat..." className="w-full bg-transparent text-[10px] font-bold text-zinc-400 focus:outline-none min-w-0" /></div>
@@ -963,7 +945,7 @@ const App = () => {
                       <div className="lg:col-span-8 space-y-6 w-full">
                         <div className="flex flex-col sm:flex-row justify-between sm:items-start gap-4">
                           <div className="flex-1 space-y-3 w-full">
-                            <input value={shot.subject} onChange={(e) => updateShot(shot.id, 'subject', e.target.value)} placeholder="Subject..." className="w-full bg-transparent text-xl md:text-2xl font-black border-b border-zinc-800 focus:border-orange-500 p-1 focus:outline-none" />
+                            <input value={shot.subject || ''} onChange={(e) => updateShot(shot.id, 'subject', e.target.value)} placeholder="Subject..." className="w-full bg-transparent text-xl md:text-2xl font-black border-b border-zinc-800 focus:border-orange-500 p-1 focus:outline-none" />
                             {availableCharacters.length > 0 && (
                               <div className="flex flex-wrap gap-2 pt-1">
                                 <span className="text-[9px] font-black text-zinc-600 uppercase flex items-center h-6 mr-1 shrink-0">In Shot:</span>
