@@ -70,7 +70,7 @@ const App = () => {
       hook: 'Main character arrives at a somber funeral wearing a full-body hot dog costume.', escalation: 'He claims he can\'t take it off because of a "zipper tragedy" and starts getting defensive about the mustard stains.', ending: 'The pallbearers realize the casket is also shaped like a giant bun.', script: ''
     }
   ]);
-  const [activeSketchId, setActiveSketchId] = useState('1');
+  const [activeSketchId, setActiveSketchId] = useState(localStorage.getItem('sketchshot_active_sketch') || '1');
   const [shots, setShots] = useState([]);
   const [isSidebarOpen, setSidebarOpen] = useState(window.innerWidth > 768);
   const [viewMode, setViewMode] = useState('storyboard'); 
@@ -91,6 +91,13 @@ const App = () => {
   const isInitialLoad = useRef({ sketches: true, shots: true });
   const [boardCols, setBoardCols] = useState(2);
   const apiKey = globalGeminiKey; 
+
+  // --- PERSIST ACTIVE SKETCH ON REFRESH ---
+  useEffect(() => {
+    if (activeSketchId) {
+      localStorage.setItem('sketchshot_active_sketch', activeSketchId);
+    }
+  }, [activeSketchId]);
 
   // --- STRICT AUTHENTICATION BOOT ---
   useEffect(() => {
@@ -408,6 +415,7 @@ const App = () => {
 
   // --- THE FULLY QUALIFIED AI ENGINE ---
   const callGemini = async (prompt, systemPrompt = "", isJson = false) => {
+    // Clean the key just in case an invisible space was copied/pasted
     const activeKey = (userApiKey || apiKey).trim();
     
     if (!activeKey) {
@@ -424,7 +432,7 @@ const App = () => {
           const payload = { contents: [{ parts: [{ text: prompt }] }], systemInstruction: { parts: [{ text: systemPrompt }] } };
           if (isJson) payload.generationConfig = { responseMimeType: "application/json" };
           
-          const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${activeKey}`, {
+          const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${activeKey}`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
           });
           
