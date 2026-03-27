@@ -95,6 +95,9 @@ const App = () => {
   const [visiblePromptId, setVisiblePromptId] = useState(null);
   const [sketchToDelete, setSketchToDelete] = useState(null);
   const fileInputRef = useRef(null);
+  
+  // THE MASTER FILE CACHE: Holds high-res images in RAM so they aren't synced to Firestore
+  const [fullResImages, setFullResImages] = useState({});
 
   // --- AI PREFERENCES (BYOK & Luddite Mode) ---
   const [userApiKey, setUserApiKey] = useState(localStorage.getItem('sketchshot_gemini_key') || '');
@@ -309,22 +312,41 @@ const App = () => {
   const updateChar = (charId, field, value) => updateSketch(activeSketchId, 'characterProfiles', activeProfiles.map(p => p.id === charId ? { ...p, [field]: value } : p));
   const removeChar = (charId) => updateSketch(activeSketchId, 'characterProfiles', activeProfiles.filter(p => p.id !== charId));
 
+  // The Proxy Downsampler
   const handleImageUpload = (shotId, event) => {
     const file = event.target.files?.[0];
     if (!file) return;
+
     const reader = new FileReader();
     reader.onload = (e) => {
+      const rawImageUrl = e.target.result;
+      
+      // Store the full-res master file in RAM for downloading
+      setFullResImages(prev => ({ ...prev, [shotId]: rawImageUrl }));
+
+      // Downsample for Firestore sync
       const img = new Image();
       img.onload = () => {
         const canvas = document.createElement('canvas');
-        let width = img.width; let height = img.height;
+        let width = img.width;
+        let height = img.height;
         const MAX_WIDTH = 800; 
-        if (width > MAX_WIDTH) { height = Math.round((height * MAX_WIDTH) / width); width = MAX_WIDTH; }
-        canvas.width = width; canvas.height = height;
-        const ctx = canvas.getContext('2d'); ctx.drawImage(img, 0, 0, width, height);
-        updateShot(shotId, 'image', canvas.toDataURL('image/jpeg', 0.7));
+
+        if (width > MAX_WIDTH) {
+          height = Math.round((height * MAX_WIDTH) / width);
+          width = MAX_WIDTH;
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+
+        const compressedBase64 = canvas.toDataURL('image/jpeg', 0.7);
+        updateShot(shotId, 'image', compressedBase64);
       };
-      img.src = e.target.result;
+      img.src = rawImageUrl;
     };
     reader.readAsDataURL(file);
   };
@@ -390,7 +412,7 @@ const App = () => {
   };
 
   const exportSnapshot = () => {
-    const data = { version: "2.2", timestamp: new Date().toISOString(), sketches, shots };
+    const data = { version: "2.3", timestamp: new Date().toISOString(), sketches, shots };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a'); link.href = url; link.download = `SketchShot_Backup_${new Date().getTime()}.json`;
@@ -444,14 +466,24 @@ const App = () => {
     document.body.appendChild(link); link.click(); document.body.removeChild(link);
   };
 
-  const downloadImage = (imageUrl, shotNumber) => {
-    if (imageUrl.startsWith('http')) { window.open(imageUrl, '_blank'); } 
-    else {
-      const link = document.createElement('a'); link.href = imageUrl; link.download = `SketchShot_Storyboard_Shot_${shotNumber}.png`; link.click();
+  const downloadImage = (shotId, shotNumber) => {
+    // If we have the full-res master in memory, use that. Otherwise use the proxy.
+    const shot = shots.find(s => s.id === shotId);
+    const imageUrl = fullResImages[shotId] || shot?.image;
+    
+    if (!imageUrl) return;
+
+    if (imageUrl.startsWith('http')) { 
+      window.open(imageUrl, '_blank'); 
+    } else {
+      const link = document.createElement('a'); 
+      link.href = imageUrl; 
+      link.download = `SketchShot_Storyboard_Shot_${shotNumber}.png`; 
+      link.click();
     }
   };
 
-  // --- THE FULLY QUALIFIED AI ENGINE ---
+  // --- THE TEXT AI ENGINE ---
   const callGemini = async (prompt, systemPrompt = "", isJson = false) => {
     const activeKey = (userApiKey || apiKey).trim();
     
@@ -469,7 +501,7 @@ const App = () => {
           const payload = { contents: [{ parts: [{ text: prompt }] }], systemInstruction: { parts: [{ text: systemPrompt }] } };
           if (isJson) payload.generationConfig = { responseMimeType: "application/json" };
           
-          const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${activeKey}`, {
+          const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${activeKey}`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
           });
           
@@ -483,7 +515,7 @@ const App = () => {
         } catch (error) {
           if (i === maxRetries - 1) { 
             if (error.message === "429") {
-               alert(`Union Break! The AI hit a rate limit (Error 429).${!userApiKey ? " Try entering your own API key in the sidebar to bypass the shared limits!" : " Your API key is generating too fast."} Give it 30 seconds to breathe.`); 
+               alert(`Union Break! The AI hit a rate limit (Error 429). Give it 30 seconds to breathe.`); 
             } else {
                alert(`AI Error: ${error.message}`); 
             }
@@ -515,7 +547,7 @@ const App = () => {
     try {
       for (let i = 0; i < maxRetries; i++) {
         try {
-          const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${activeKey}`, {
+          const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:predict?key=${activeKey}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -528,8 +560,25 @@ const App = () => {
           if (!response.ok) throw new Error(`Google API threw a ${response.status}.`);
 
           const result = await response.json();
-          const imageUrl = `data:image/png;base64,${result.predictions[0].bytesBase64Encoded}`;
-          updateShot(shotId, 'image', imageUrl);
+          const rawImageUrl = `data:image/png;base64,${result.predictions[0].bytesBase64Encoded}`;
+          
+          // Store the massive master file in RAM so the user can download it
+          setFullResImages(prev => ({ ...prev, [shotId]: rawImageUrl }));
+
+          // Crush it to a 800px 70% JPEG proxy for Firestore sync
+          const img = new Image();
+          img.onload = () => {
+            const canvas = document.createElement('canvas');
+            let width = img.width; let height = img.height;
+            const MAX_WIDTH = 800; 
+            if (width > MAX_WIDTH) { height = Math.round((height * MAX_WIDTH) / width); width = MAX_WIDTH; }
+            canvas.width = width; canvas.height = height;
+            const ctx = canvas.getContext('2d'); ctx.drawImage(img, 0, 0, width, height);
+            
+            updateShot(shotId, 'image', canvas.toDataURL('image/jpeg', 0.7));
+          };
+          img.src = rawImageUrl;
+
           break; 
           
         } catch (error) {
@@ -619,6 +668,7 @@ const App = () => {
     } catch (err) { console.error(err); } finally { setLoadingStates(prev => ({ ...prev, script: false })); }
   };
 
+  // --- THE "YES, AND" FIX ---
   const generateTextAssist = async (shotId, field, rolePrompt, contextPrompt) => {
     setLoadingStates(prev => ({ ...prev, [`${field}-${shotId}`]: true }));
     const shot = shots.find(s => s.id === shotId);
@@ -643,6 +693,7 @@ const App = () => {
     } catch (err) { console.error(err); } finally { setLoadingStates(prev => ({ ...prev, [beatType]: false })); }
   };
 
+  // --- THE "YES, AND" FIX FOR CHARACTERS ---
   const generateCharDesc = async (charId) => {
     setLoadingStates(prev => ({ ...prev, [`char-${charId}`]: true }));
     const char = activeProfiles.find(c => c.id === charId);
@@ -654,6 +705,7 @@ const App = () => {
     } catch(err) { console.error(err); } finally { setLoadingStates(prev => ({ ...prev, [`char-${charId}`]: false })); }
   };
 
+  // --- DYNAMIC IMAGE STYLE PROMPTS ---
   const getShotPrompt = (shot) => {
     const charContext = shot.shotCharacters?.length > 0 
       ? shot.shotCharacters.map(n => {
@@ -1119,7 +1171,7 @@ const App = () => {
                             <><img src={shot.image} alt="Storyboard" className="w-full h-full object-cover" />
                               <div className="absolute top-3 right-3 flex gap-2 opacity-100 md:opacity-0 md:group-hover/img:opacity-100 transition-opacity">
                                 <button onClick={() => setZoomedImage(shot.image)} className="p-2 bg-black/60 hover:bg-black/80 rounded-full text-white shadow-lg"><Maximize2 size={14} /></button>
-                                <button onClick={() => downloadImage(shot.image, shot.number)} className="p-2 bg-black/60 hover:bg-black/80 rounded-full text-white shadow-lg"><Download size={14} /></button>
+                                <button onClick={() => downloadImage(shot.id, shot.number)} className="p-2 bg-black/60 hover:bg-black/80 rounded-full text-white shadow-lg"><Download size={14} /></button>
                                 <button onClick={() => updateShot(shot.id, 'image', null)} className="p-2 bg-red-500/80 hover:bg-red-500 rounded-full text-white shadow-lg"><X size={14} /></button>
                               </div>
                             </>
