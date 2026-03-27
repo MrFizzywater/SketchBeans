@@ -53,6 +53,7 @@ const CAMERA_MOVES = ['Locked Off', 'Handheld / Shaky', 'Slow Creep In', 'Slow C
 const TONES = ['Absurdist', 'Disruptive / Cringe', 'Deadpan', 'Slapstick', 'Satire', 'Surreal', 'Mockumentary', 'Cinematic'];
 const IMAGE_STYLES = ['Pencil Sketch', 'Photographic', 'Cinematic', 'Comic Book', 'Watercolor', '3D Render', 'Vintage Film'];
 const COMEDY_ARCHETYPES = ['The Straight Man', 'The Wildcard', 'The Neurotic', 'The Himbo / Bimbo', 'The Agent of Chaos', 'The Deadpan', 'The Instigator', 'The Oblivious One'];
+const ASPECT_RATIOS = [{label: '16:9 (Widescreen)', val: '16:9'}, {label: '1:1 (Square)', val: '1:1'}, {label: '4:3 (Standard)', val: '4:3'}, {label: '9:16 (Vertical)', val: '9:16'}, {label: '3:4 (Portrait)', val: '3:4'}];
 
 const getGenderText = (val) => {
   if (val < 35) return "Femme-presenting";
@@ -78,7 +79,7 @@ const App = () => {
       id: '1', title: 'Welcome to SketchShot 🎬', 
       premise: 'A director discovers a digital production rig that does the heavy lifting of pre-production, allowing them to visualize their absurd ideas instantly.',
       settingType: 'INT.', location: 'THE EDIT BAY', timeOfDay: 'NIGHT',
-      tone: 'Cinematic', imageStyle: 'Pencil Sketch',
+      tone: 'Cinematic', imageStyle: 'Pencil Sketch', aspectRatio: '16:9',
       characterProfiles: [
         { id: 'c1', name: 'The Director', age: 35, gender: 50, melanin: 50, archetype: 'The Neurotic', desc: 'Staring at a blank screen, waiting for inspiration to strike.', image: null },
         { id: 'c2', name: 'The AI', age: 1, gender: 50, melanin: 50, archetype: 'The Wildcard', desc: 'A chaotic but helpful collaborative partner.', image: null },
@@ -92,7 +93,7 @@ const App = () => {
     { id: 's1', sketchId: '1', number: 1, type: 'Wide', cameraMove: 'Locked Off', subject: 'THE DASHBOARD', action: 'Welcome to SketchShot! The key details of your sketch live right up there under the title. \n\nClick the "SCENE CONFIG" tab to change your location, comedic tone, and visual style.', notes: 'Keep the premise simple. The AI uses it to build everything else.', dialogue: '', fx: false, image: null, locationCaveat: '', shotCharacters: [] },
     { id: 's2', sketchId: '1', number: 2, type: 'Medium', cameraMove: 'Whip Pan', subject: 'CHARACTER BIBLE', action: 'Switch to the Character Bible tab to add your talent. \n\nThe AI remembers your characters\' archetypes and uses them when it writes dialogue or blocks the scene.', notes: 'Upload an avatar for each character so you remember their vibe.', dialogue: '', fx: false, image: null, locationCaveat: '', shotCharacters: ['The Director'] },
     { id: 's3', sketchId: '1', number: 3, type: 'Close Up', cameraMove: 'Crash Zoom', subject: 'THE AI SPARKLE', action: 'See those little purple sparkle icons? Click them to have the AI act as your co-writer. \n\nIt uses "Yes, And..." logic, meaning it builds ON whatever text you\'ve already typed into the box.', dialogue: 'Wait, I don\'t have to write this myself?', notes: '', fx: false, image: null, locationCaveat: '', shotCharacters: ['The Director', 'The AI'] },
-    { id: 's4', sketchId: '1', number: 4, type: 'Insert', cameraMove: 'Handheld / Shaky', subject: 'IMAGE GENERATION', action: 'Paste your personal Gemini API key into the sidebar (Luddite Mode must be off).\n\nThen click the GENERATE button on any shot card to hallucinate a storyboard frame based on your Art Style.', notes: 'Make sure you pick an Art Style in the Scene Config!', dialogue: '', fx: false, image: null, locationCaveat: '', shotCharacters: [] },
+    { id: 's4', sketchId: '1', number: 4, type: 'Insert', cameraMove: 'Handheld / Shaky', subject: 'IMAGE GENERATION', action: 'Paste your personal Gemini API key into the sidebar (Luddite Mode must be off).\n\nThen click the GENERATE button on any shot card to hallucinate a storyboard frame based on your Art Style.', notes: 'Make sure you pick an Art Style and Aspect Ratio in the Scene Config!', dialogue: '', fx: false, image: null, locationCaveat: '', shotCharacters: [] },
     { id: 's5', sketchId: '1', number: 5, type: 'Wide', cameraMove: 'Dolly Tracking', subject: 'EXPORT & SHOOT', action: 'When you are done, click the PRINT or BOARDS tabs to see your printable layouts.\n\nYou can also generate an Optimized Shoot Plan that groups your shots by location and camera setup.', notes: 'Time to go make a movie.', dialogue: '', fx: false, image: null, locationCaveat: '', shotCharacters: [] }
   ]);
   
@@ -253,7 +254,7 @@ const App = () => {
     const updatedSketches = sketches.filter(s => s.id !== id);
     if (updatedSketches.length === 0) {
       const newId = Date.now().toString();
-      updatedSketches.push({ id: newId, title: 'New Sketch', settingType: 'INT.', location: 'LOCATION', timeOfDay: 'DAY', tone: 'Absurdist', imageStyle: 'Pencil Sketch', premise: '', characterProfiles: [], props: '', hook: '', escalation: '', ending: '', script: '' });
+      updatedSketches.push({ id: newId, title: 'New Sketch', settingType: 'INT.', location: 'LOCATION', timeOfDay: 'DAY', tone: 'Absurdist', imageStyle: 'Pencil Sketch', aspectRatio: '16:9', premise: '', characterProfiles: [], props: '', hook: '', escalation: '', ending: '', script: '' });
       setActiveSketchId(newId);
     } else if (activeSketchId === id) setActiveSketchId(updatedSketches[0].id);
     
@@ -391,7 +392,7 @@ const App = () => {
   };
 
   const exportSnapshot = () => {
-    const data = { version: "3.2", timestamp: new Date().toISOString(), sketches, shots };
+    const data = { version: "3.3", timestamp: new Date().toISOString(), sketches, shots };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a'); link.href = url; link.download = `SketchShot_Backup_${new Date().getTime()}.json`;
@@ -514,7 +515,13 @@ const App = () => {
         try {
           const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${globalImageModel}:predict?key=${activeKey}`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ instances: { prompt: promptText }, parameters: { sampleCount: 1 } })
+            body: JSON.stringify({ 
+              instances: { prompt: promptText }, 
+              parameters: { 
+                sampleCount: 1,
+                aspectRatio: activeSketch?.aspectRatio || '16:9'
+              } 
+            })
           });
 
           if (response.status === 429) throw new Error("429");
@@ -553,7 +560,7 @@ const App = () => {
     setLoadingStates(prev => ({ ...prev, genShots: true }));
     try {
       const typeList = SHOT_TYPES.join(', ');
-      const systemPrompt = `Expert comedy director. Generate JSON array of exactly 8 shots. Use these EXACT keys: "type" (MUST BE EXACTLY ONE OF: ${typeList}), "subject", "action", "notes", "dialogue", "shotCharacters" (array of strings).`;
+      const systemPrompt = `Expert comedy director. Generate JSON array of exactly 8 shots. Use these EXACT keys: "type" (MUST BE EXACTLY ONE OF: ${typeList}), "subject", "action", "notes", "dialogue", "shotCharacters" (array of strings). CRITICAL: Keep all text responses extremely brief, punchy, and direct. No flowery language. 1-2 short sentences max.`;
       const prompt = `PREMISE: ${activeSketch?.premise}\nTONE: ${activeSketch?.tone}\nSCENE: ${formattedSceneHeading}\nCHARACTERS AVAILABLE: ${richCharactersContext}\nHOOK: ${activeSketch?.hook}\nESCALATION: ${activeSketch?.escalation}\nENDING: ${activeSketch?.ending}`;
       const newShotsData = await callGemini(prompt, systemPrompt, true);
       if (newShotsData) {
@@ -569,7 +576,7 @@ const App = () => {
     setLoadingStates(prev => ({ ...prev, singleAIShot: true }));
     try {
       const typeList = SHOT_TYPES.join(', ');
-      const systemPrompt = `Expert comedy director. Generate exactly ONE new shot to continue the sequence. Return a SINGLE JSON OBJECT with these EXACT keys: "type" (MUST BE EXACTLY ONE OF: ${typeList}), "subject", "action", "notes", "dialogue", "shotCharacters" (array of strings).`;
+      const systemPrompt = `Expert comedy director. Generate exactly ONE new shot to continue the sequence. Return a SINGLE JSON OBJECT with these EXACT keys: "type" (MUST BE EXACTLY ONE OF: ${typeList}), "subject", "action", "notes", "dialogue", "shotCharacters" (array of strings). CRITICAL: Keep all text extremely brief, punchy, and direct. 1-2 short sentences max. Zero fluff.`;
       const recentShots = activeShots.slice(-3).map(s => `Shot ${s.number}: [${s.type}] ${s.subject} - ${s.action}`).join('\n');
       const prompt = `PREMISE: ${activeSketch?.premise}\nTONE: ${activeSketch?.tone}\nSCENE: ${formattedSceneHeading}\nCHARACTERS: ${richCharactersContext}\nHOOK: ${activeSketch?.hook}\nRECENT SHOTS:\n${recentShots}\n\nCreate the NEXT logical shot to build the comedy.`;
       const newShotData = await callGemini(prompt, systemPrompt, true);
@@ -616,7 +623,7 @@ const App = () => {
       const charContext = shot.shotCharacters?.length > 0 ? shot.shotCharacters.map(n => activeProfiles.find(p => p.name === n)?.desc || n).join(', ') : richCharactersContext;
       const existing = shot[field] ? `CURRENT TEXT (DO NOT ERASE, ESCALATE THIS): "${shot[field]}"` : `CURRENT TEXT: [Empty]`;
       const prompt = `Scene: ${formattedSceneHeading}\nPremise: ${activeSketch?.premise}\n${contextPrompt}\nCharacters in shot: ${charContext}\nCamera Move: ${shot.cameraMove}\n${existing}`;
-      const newText = await callGemini(prompt, `${rolePrompt} Apply the 'Yes, And...' rule of improv comedy. If current text exists, keep its core facts (wardrobe, physical traits, props) and punch it up/escalate it. Keep it under 2 sentences.`, false);
+      const newText = await callGemini(prompt, `${rolePrompt} Apply the 'Yes, And...' rule. If text exists, keep facts and punch it up. CRITICAL: Be extremely concise, direct, and blunt. No flowery prose. 1-2 short sentences max.`, false);
       if (newText) updateShot(shotId, field, newText.trim());
     } catch (err) { console.error(err); } finally { setLoadingStates(prev => ({ ...prev, [`${field}-${shotId}`]: false })); }
   };
@@ -624,7 +631,7 @@ const App = () => {
   const generateNarrativeBeat = async (beatType) => {
     setLoadingStates(prev => ({ ...prev, [beatType]: true }));
     try {
-      const systemPrompt = `Brilliant comedy writer (${activeSketch?.tone || 'comedic'} humor). Provide a punchy, creative ${beatType} for the sketch. Keep it under 3 sentences. Punch it up if text exists.`;
+      const systemPrompt = `Brilliant comedy writer (${activeSketch?.tone || 'comedic'} humor). Provide a punchy, creative ${beatType} for the sketch. CRITICAL: Be extremely brief and direct. 1-2 short sentences maximum. Zero fluff.`;
       const prompt = `Title: ${activeSketch?.title}\nScene Heading: ${formattedSceneHeading}\nCharacter Profiles: ${richCharactersContext}\nCurrent Premise: ${activeSketch?.premise}\nCurrent Hook: ${activeSketch?.hook}\nCurrent Escalation: ${activeSketch?.escalation}\nCurrent Ending: ${activeSketch?.ending}\nTask: Write/Improve the ${beatType.toUpperCase()}.`;
       const newBeat = await callGemini(prompt, systemPrompt, false);
       if (newBeat) updateSketch(activeSketchId, beatType, newBeat.trim());
@@ -636,7 +643,7 @@ const App = () => {
     const char = activeProfiles.find(c => c.id === charId);
     try {
       const existing = char.desc ? `CURRENT DETAILS (YES, AND... THESE): "${char.desc}"\n` : '';
-      const prompt = `Scene: ${formattedSceneHeading}\nPremise: ${activeSketch?.premise}\nSketch Hook: ${activeSketch?.hook}\nCharacter Name: ${char.name}\nCharacter Tropes: ${char.archetype}, ${char.age} years old, ${getGenderText(char.gender)}, ${getSkinText(char.melanin)}\n${existing}Task: Write a 1-2 sentence absurd, highly specific character description, vibe, or fatal flaw. If current details exist, KEEP them and ESCALATE them. Think disruptive/cringe comedy.`;
+      const prompt = `Scene: ${formattedSceneHeading}\nPremise: ${activeSketch?.premise}\nSketch Hook: ${activeSketch?.hook}\nCharacter Name: ${char.name}\nCharacter Tropes: ${char.archetype}, ${char.age} years old, ${getGenderText(char.gender)}, ${getSkinText(char.melanin)}\n${existing}Task: Write 1 absurd, highly specific character description or fatal flaw. CRITICAL: Extremely brief, direct, and punchy. No flowery prose. Maximum 15 words.`;
       const newDesc = await callGemini(prompt, `Expert comedy writer (${activeSketch?.tone || 'comedic'} humor).`, false);
       if (newDesc) updateChar(charId, 'desc', newDesc.trim());
     } catch(err) { console.error(err); } finally { setLoadingStates(prev => ({ ...prev, [`char-${charId}`]: false })); }
@@ -828,7 +835,7 @@ const App = () => {
               </button>
             </div>
           ))}
-          <button onClick={() => { const id = Date.now().toString(); setSketches([...sketches, { id, title: 'New Sketch', settingType: 'INT.', location: 'LOCATION', timeOfDay: 'DAY', tone: 'Absurdist', imageStyle: 'Pencil Sketch', premise: '', characters: '', characterProfiles: [], props: '', hook: '', escalation: '', ending: '', script: '' }]); setActiveSketchId(id); if(window.innerWidth < 768) setSidebarOpen(false); }} className="w-full mt-4 flex items-center gap-2 px-3 py-2 text-xs text-zinc-500 hover:text-zinc-200"><Plus size={14} /> NEW SKETCH</button>
+          <button onClick={() => { const id = Date.now().toString(); setSketches([...sketches, { id, title: 'New Sketch', settingType: 'INT.', location: 'LOCATION', timeOfDay: 'DAY', tone: 'Absurdist', imageStyle: 'Pencil Sketch', aspectRatio: '16:9', premise: '', characters: '', characterProfiles: [], props: '', hook: '', escalation: '', ending: '', script: '' }]); setActiveSketchId(id); if(window.innerWidth < 768) setSidebarOpen(false); }} className="w-full mt-4 flex items-center gap-2 px-3 py-2 text-xs text-zinc-500 hover:text-zinc-200"><Plus size={14} /> NEW SKETCH</button>
         </nav>
 
         {/* CLOUD SYNC & BYOK PANEL */}
@@ -906,21 +913,24 @@ const App = () => {
           <header className="p-4 md:p-6 border-b border-zinc-800 bg-zinc-950 md:bg-zinc-950/90 md:backdrop-blur-xl sticky top-0 z-20 w-full shrink-0 shadow-lg">
             <div className="max-w-6xl mx-auto flex flex-col gap-4">
               
-              <div className="flex items-center gap-3">
-                <button onClick={() => setSidebarOpen(true)} className="md:hidden text-zinc-400 hover:text-white shrink-0"><Menu size={24}/></button>
-                <input value={activeSketch?.title || ''} onChange={(e) => updateSketch(activeSketchId, 'title', e.target.value)} className="bg-transparent text-2xl md:text-4xl font-black focus:outline-none w-full tracking-tighter truncate" placeholder="Title..." />
-              </div>
-              
-              {/* KEY DETAILS LOCKED UNDER TITLE */}
-              <div className="flex flex-wrap items-center gap-3 md:gap-4 text-[10px] md:text-xs font-bold text-zinc-500 mb-2">
-                <span className="text-orange-500 flex items-center gap-1 shrink-0"><Map size={12}/> {formattedSceneHeading}</span>
-                <span className="text-purple-400 flex items-center gap-1 shrink-0"><VenetianMask size={12}/> {activeSketch?.tone || 'No Tone'}</span>
-                <span className="text-blue-400 flex items-center gap-1 shrink-0"><ImageIcon size={12}/> {activeSketch?.imageStyle || 'Pencil Sketch'}</span>
-                <span className="text-green-400 truncate max-w-[150px] sm:max-w-sm flex items-center gap-1"><Users size={12}/> {availableCharacters.join(', ') || 'No Characters'}</span>
+              <div className="flex flex-col gap-3">
+                <div className="flex items-center gap-3">
+                  <button onClick={() => setSidebarOpen(true)} className="md:hidden text-zinc-400 hover:text-white shrink-0"><Menu size={24}/></button>
+                  <input value={activeSketch?.title || ''} onChange={(e) => updateSketch(activeSketchId, 'title', e.target.value)} className="bg-transparent text-2xl md:text-4xl font-black focus:outline-none w-full tracking-tighter truncate" placeholder="Title..." />
+                </div>
+                
+                {/* HIGH VISIBILITY SCENE METADATA BADGES */}
+                <div className="flex flex-wrap items-center gap-2 text-[10px] font-black uppercase tracking-widest">
+                  <span className="bg-orange-500/10 text-orange-500 border border-orange-500/20 px-2.5 py-1 rounded-md flex items-center gap-1 shadow-sm"><Map size={12}/> {formattedSceneHeading}</span>
+                  <span className="bg-purple-500/10 text-purple-400 border border-purple-500/20 px-2.5 py-1 rounded-md flex items-center gap-1 shadow-sm"><VenetianMask size={12}/> {activeSketch?.tone || 'No Tone'}</span>
+                  <span className="bg-blue-500/10 text-blue-400 border border-blue-500/20 px-2.5 py-1 rounded-md flex items-center gap-1 shadow-sm"><ImageIcon size={12}/> {activeSketch?.imageStyle || 'Pencil Sketch'}</span>
+                  <span className="bg-zinc-800 text-zinc-300 border border-zinc-700 px-2.5 py-1 rounded-md flex items-center gap-1 shadow-sm"><Layout size={12}/> {activeSketch?.aspectRatio || '16:9'}</span>
+                  <span className="bg-green-500/10 text-green-400 border border-green-500/20 px-2.5 py-1 rounded-md flex items-center gap-1 truncate max-w-[200px] shadow-sm"><Users size={12}/> {availableCharacters.join(', ') || 'No Characters'}</span>
+                </div>
               </div>
               
               {/* HORIZONTAL TAB NAVIGATION */}
-              <div className="flex items-center gap-2 overflow-x-auto pb-2 border-b border-zinc-800/50">
+              <div className="flex items-center gap-2 overflow-x-auto pb-2 border-b border-zinc-800/50 mt-2">
                 <button onClick={() => setViewMode('scene')} className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs font-black whitespace-nowrap transition-all ${viewMode === 'scene' ? 'bg-orange-500 text-white shadow-lg shadow-orange-900/20' : 'bg-zinc-900/50 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200'}`}>
                   <Settings2 size={14}/> SCENE CONFIG
                 </button>
@@ -972,22 +982,8 @@ const App = () => {
                   <textarea value={activeSketch?.premise || ''} onChange={(e) => updateSketch(activeSketchId, 'premise', e.target.value)} placeholder="Describe the basic concept here to act as a seed for the AI... (e.g. A guy attends a deeply serious funeral but gets stuck in his mascot uniform.)" className="w-full bg-zinc-950/50 border border-zinc-800/80 rounded-xl p-4 md:p-6 text-sm focus:outline-none focus:border-orange-500/50 min-h-[100px] resize-y text-zinc-200" />
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
-                  {['hook', 'escalation', 'ending'].map((beat) => (
-                    <div key={beat} className="space-y-2 bg-zinc-900/30 p-5 rounded-[2rem] border border-zinc-800/50">
-                      <label className="text-[10px] font-black text-orange-500 uppercase tracking-widest flex items-center justify-between mb-2">
-                        <span className="flex items-center gap-2"><div className="w-1.5 h-1.5 bg-orange-500 rounded-full" /> The {beat}</span>
-                        {aiEnabled && (
-                          <button onClick={() => generateNarrativeBeat(beat)} disabled={!isRealUser || isAIBusy} className="p-1.5 hover:bg-orange-500/20 rounded transition-colors disabled:opacity-50">{!isRealUser ? <Lock size={12} className="text-orange-500" /> : <Sparkles size={12} className="text-orange-500" />}</button>
-                        )}
-                      </label>
-                      <textarea value={activeSketch?.[beat] || ''} onChange={(e) => updateSketch(activeSketchId, beat, e.target.value)} className="w-full bg-zinc-950/50 border border-zinc-800 rounded-xl p-4 text-sm focus:outline-none focus:border-orange-500/50 min-h-[120px] resize-none text-zinc-300" />
-                    </div>
-                  ))}
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 bg-zinc-900/20 p-6 md:p-8 rounded-[2.5rem] border border-zinc-800 shadow-inner">
-                  <div className="space-y-2 sm:col-span-2 lg:col-span-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 bg-zinc-900/20 p-6 md:p-8 rounded-[2.5rem] border border-zinc-800 shadow-inner">
+                  <div className="space-y-2 sm:col-span-2 lg:col-span-5">
                     <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Scene Heading</span>
                     <div className="flex flex-col sm:flex-row bg-zinc-950/50 rounded-xl border border-zinc-800 focus-within:border-orange-500/50 overflow-hidden shadow-inner">
                       <select value={activeSketch?.settingType || 'INT.'} onChange={(e) => updateSketch(activeSketchId, 'settingType', e.target.value)} className="bg-zinc-900 border-b sm:border-b-0 sm:border-r border-zinc-800 text-sm font-bold text-orange-500 p-3 focus:outline-none cursor-pointer text-center sm:w-24">
@@ -1012,10 +1008,30 @@ const App = () => {
                       {IMAGE_STYLES.map(s => <option key={s} value={s}>{s}</option>)}
                     </select>
                   </div>
+                  <div className="space-y-2">
+                    <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest flex items-center gap-1"><Layout size={12}/> Ratio</span>
+                    <select value={activeSketch?.aspectRatio || '16:9'} onChange={(e) => updateSketch(activeSketchId, 'aspectRatio', e.target.value)} className="w-full bg-zinc-950/50 border border-zinc-800 rounded-xl p-3 text-sm focus:outline-none font-bold cursor-pointer text-zinc-300 [&>option]:bg-zinc-900">
+                      {ASPECT_RATIOS.map(s => <option key={s.val} value={s.val}>{s.label}</option>)}
+                    </select>
+                  </div>
                   <div className="space-y-2 sm:col-span-2">
                     <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Key Props</span>
                     <input value={activeSketch?.props || ''} onChange={(e) => updateSketch(activeSketchId, 'props', e.target.value)} placeholder="Mustard, Casket..." className="w-full bg-zinc-950/50 border border-zinc-800 rounded-xl p-3 text-sm focus:outline-none font-bold italic h-[46px] text-zinc-300" />
                   </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
+                  {['hook', 'escalation', 'ending'].map((beat) => (
+                    <div key={beat} className="space-y-2 bg-zinc-900/30 p-5 rounded-[2rem] border border-zinc-800/50">
+                      <label className="text-[10px] font-black text-orange-500 uppercase tracking-widest flex items-center justify-between mb-2">
+                        <span className="flex items-center gap-2"><div className="w-1.5 h-1.5 bg-orange-500 rounded-full" /> The {beat}</span>
+                        {aiEnabled && (
+                          <button onClick={() => generateNarrativeBeat(beat)} disabled={!isRealUser || isAIBusy} className="p-1.5 hover:bg-orange-500/20 rounded transition-colors disabled:opacity-50">{!isRealUser ? <Lock size={12} className="text-orange-500" /> : <Sparkles size={12} className="text-orange-500" />}</button>
+                        )}
+                      </label>
+                      <textarea value={activeSketch?.[beat] || ''} onChange={(e) => updateSketch(activeSketchId, beat, e.target.value)} className="w-full bg-zinc-950/50 border border-zinc-800 rounded-xl p-4 text-sm focus:outline-none focus:border-orange-500/50 min-h-[120px] resize-none text-zinc-300" />
+                    </div>
+                  ))}
                 </div>
               </div>
             )}
@@ -1146,7 +1162,12 @@ const App = () => {
                       
                       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-10 relative z-10 w-full mt-8 md:mt-0">
                         <div className="lg:col-span-4 space-y-4 w-full">
-                          <div className="aspect-video bg-zinc-950 rounded-[1.5rem] border border-zinc-800 overflow-hidden relative group/img flex items-center justify-center">
+                          
+                          {/* DYNAMIC ASPECT RATIO CONTAINER */}
+                          <div 
+                            className="bg-zinc-950 rounded-[1.5rem] border border-zinc-800 overflow-hidden relative group/img flex items-center justify-center mx-auto"
+                            style={{ aspectRatio: (activeSketch?.aspectRatio || '16:9').replace(':', '/') }}
+                          >
                             {shot.image ? (
                               <><img src={shot.image} alt="Storyboard" className="w-full h-full object-cover" />
                                 <div className="absolute top-3 right-3 flex gap-2 opacity-100 md:opacity-0 md:group-hover/img:opacity-100 transition-opacity">
