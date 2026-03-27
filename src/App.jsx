@@ -22,6 +22,8 @@ import {
 // --- ENVIRONMENT INITIALIZATION & SAFE KEY EXTRACTION ---
 let firebaseConfig = {};
 let globalGeminiKey = "";
+let globalTextModel = "gemini-2.5-flash"; // Default Fallback
+let globalImageModel = "imagen-3.0-generate-001"; // Default Fallback
 
 if (typeof __firebase_config !== 'undefined') {
   firebaseConfig = JSON.parse(__firebase_config);
@@ -36,6 +38,9 @@ if (typeof __firebase_config !== 'undefined') {
       appId: import.meta.env.VITE_FIREBASE_APP_ID
     };
     globalGeminiKey = import.meta.env.VITE_GEMINI_API_KEY || "";
+    // Pull models from env, so they can be changed without touching code
+    if (import.meta.env.VITE_GEMINI_TEXT_MODEL) globalTextModel = import.meta.env.VITE_GEMINI_TEXT_MODEL;
+    if (import.meta.env.VITE_GEMINI_IMAGE_MODEL) globalImageModel = import.meta.env.VITE_GEMINI_IMAGE_MODEL;
   } catch (e) { /* Ignore in strict environments */ }
 }
 
@@ -483,7 +488,7 @@ const App = () => {
     }
   };
 
-  // --- THE FULLY QUALIFIED AI ENGINE (FOR HETZNER DEPLOYMENT) ---
+  // --- THE CONFIGURED AI ENGINE ---
   const callGemini = async (prompt, systemPrompt = "", isJson = false) => {
     const activeKey = (userApiKey || apiKey).trim();
     
@@ -501,8 +506,8 @@ const App = () => {
           const payload = { contents: [{ parts: [{ text: prompt }] }], systemInstruction: { parts: [{ text: systemPrompt }] } };
           if (isJson) payload.generationConfig = { responseMimeType: "application/json" };
           
-          // PUBLIC API ENDPOINT: Uses gemini-2.5-flash for production deployment
-          const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${activeKey}`, {
+          // Uses the environment variable so you can change it without rebuilding
+          const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${globalTextModel}:generateContent?key=${activeKey}`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
           });
           
@@ -531,7 +536,7 @@ const App = () => {
     }
   };
 
-  // --- IMAGEN INTEGRATION (FOR HETZNER DEPLOYMENT) ---
+  // --- IMAGEN INTEGRATION (BYOK ONLY) ---
   const generateImage = async (shotId) => {
     const activeKey = userApiKey.trim();
     if (!activeKey) {
@@ -548,8 +553,8 @@ const App = () => {
     try {
       for (let i = 0; i < maxRetries; i++) {
         try {
-          // PUBLIC API ENDPOINT: Uses imagen-3.0-generate-001 for production deployment
-          const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:predict?key=${activeKey}`, {
+          // Uses the environment variable so you can change it without rebuilding
+          const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${globalImageModel}:predict?key=${activeKey}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -670,7 +675,6 @@ const App = () => {
     } catch (err) { console.error(err); } finally { setLoadingStates(prev => ({ ...prev, script: false })); }
   };
 
-  // --- THE "YES, AND" FIX ---
   const generateTextAssist = async (shotId, field, rolePrompt, contextPrompt) => {
     setLoadingStates(prev => ({ ...prev, [`${field}-${shotId}`]: true }));
     const shot = shots.find(s => s.id === shotId);
@@ -695,7 +699,6 @@ const App = () => {
     } catch (err) { console.error(err); } finally { setLoadingStates(prev => ({ ...prev, [beatType]: false })); }
   };
 
-  // --- THE "YES, AND" FIX FOR CHARACTERS ---
   const generateCharDesc = async (charId) => {
     setLoadingStates(prev => ({ ...prev, [`char-${charId}`]: true }));
     const char = activeProfiles.find(c => c.id === charId);
@@ -707,7 +710,6 @@ const App = () => {
     } catch(err) { console.error(err); } finally { setLoadingStates(prev => ({ ...prev, [`char-${charId}`]: false })); }
   };
 
-  // --- DYNAMIC IMAGE STYLE PROMPTS ---
   const getShotPrompt = (shot) => {
     const charContext = shot.shotCharacters?.length > 0 
       ? shot.shotCharacters.map(n => {
