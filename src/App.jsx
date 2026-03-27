@@ -6,7 +6,7 @@ import {
   X, Download, Upload, Save, Maximize2, Map, 
   ChevronUp, ChevronDown, 
   UserPlus, ArrowUp, ArrowDown, Cloud, GitBranch, LogOut, Lock, Copy, Menu,
-  ScrollText, VenetianMask, Clapperboard, Key, EyeOff, Eye
+  ScrollText, VenetianMask, Clapperboard, Key, EyeOff, User, Settings2
 } from 'lucide-react';
 
 // --- FIREBASE IMPORTS ---
@@ -47,6 +47,20 @@ const appId = typeof __app_id !== 'undefined' ? __app_id : 'sketchshot-app';
 const SHOT_TYPES = ['Wide', 'Medium', 'Close Up', 'POV', 'Over the Shoulder', 'Insert', 'Drone', 'Tracking'];
 const TONES = ['Absurdist', 'Disruptive / Cringe', 'Deadpan', 'Slapstick', 'Satire', 'Surreal', 'Mockumentary', 'Cinematic'];
 const IMAGE_STYLES = ['Pencil Sketch', 'Photographic', 'Cinematic', 'Comic Book', 'Watercolor', '3D Render', 'Vintage Film'];
+const COMEDY_ARCHETYPES = ['The Straight Man', 'The Wildcard', 'The Neurotic', 'The Himbo / Bimbo', 'The Agent of Chaos', 'The Deadpan', 'The Instigator', 'The Oblivious One'];
+
+// Helper to translate sliders to text for the AI
+const getGenderText = (val) => {
+  if (val < 35) return "Femme-presenting";
+  if (val > 65) return "Masc-presenting";
+  return "Androgynous-presenting";
+};
+
+const getSkinText = (val) => {
+  if (val < 35) return "Light skin";
+  if (val > 65) return "Dark skin";
+  return "Medium skin";
+};
 
 const App = () => {
   // --- AUTH STATE ---
@@ -62,9 +76,8 @@ const App = () => {
       settingType: 'INT.', location: 'FUNERAL HOME', timeOfDay: 'DAY',
       tone: 'Disruptive / Cringe', imageStyle: 'Pencil Sketch',
       characterProfiles: [
-        { id: 'c1', name: 'Greg', desc: 'Sweaty, deeply defensive. Wearing a full-body hot dog suit with a broken industrial zipper.' },
-        { id: 'c2', name: 'The Hot Dog Man', desc: 'A rival mascot who takes his job way too seriously.' },
-        { id: 'c3', name: 'Mourners', desc: 'Just trying to grieve. Very confused by the mustard.' }
+        { id: 'c1', name: 'Greg', age: 42, gender: 85, melanin: 20, archetype: 'The Neurotic', desc: 'Sweaty, deeply defensive. Wearing a full-body hot dog suit with a broken industrial zipper.', image: null },
+        { id: 'c2', name: 'The Hot Dog Man', age: 60, gender: 95, melanin: 70, archetype: 'The Straight Man', desc: 'A rival mascot who takes his job way too seriously.', image: null },
       ],
       props: 'Casket, Mustard, Industrial Zipper, Floral Arrangement',
       hook: 'Main character arrives at a somber funeral wearing a full-body hot dog costume.', escalation: 'He claims he can\'t take it off because of a "zipper tragedy" and starts getting defensive about the mustard stains.', ending: 'The pallbearers realize the casket is also shaped like a giant bun.', script: ''
@@ -204,6 +217,14 @@ const App = () => {
               CONTINUE AS GUEST (Manual Mode)
             </button>
           </div>
+          
+          <div className="pt-2">
+            <p className="text-[9px] sm:text-[10px] text-zinc-600 uppercase tracking-widest font-bold mb-3">AI Features Require Login</p>
+            <p className="text-[9px] text-orange-500/80 font-bold max-w-[250px] mx-auto leading-tight border border-orange-500/20 bg-orange-500/5 p-2 rounded-lg">
+              <AlertCircle size={10} className="inline mr-1 -mt-0.5"/> 
+              If you opened this from a social app, tap the dots in the corner and select "Open in System Browser" to log in.
+            </p>
+          </div>
         </div>
       </div>
     );
@@ -216,10 +237,19 @@ const App = () => {
   
   const formattedSceneHeading = `${activeSketch?.settingType || 'INT.'} ${activeSketch?.location || 'LOCATION'} - ${activeSketch?.timeOfDay || 'DAY'}`;
 
-  // Safe fallback to prevent crashes if characters field is missing
   const activeProfiles = activeSketch?.characterProfiles || [];
   const availableCharacters = activeProfiles.map(c => c.name);
-  const richCharactersContext = activeProfiles.map(c => `${c.name}${c.desc ? ` (${c.desc})` : ''}`).join(' | ');
+  
+  // Translating all the sliders into plain English for the AI
+  const richCharactersContext = activeProfiles.map(c => {
+    let details = [];
+    if (c.age) details.push(`${c.age}yo`);
+    if (c.archetype) details.push(c.archetype);
+    if (c.gender !== undefined) details.push(getGenderText(c.gender));
+    if (c.melanin !== undefined) details.push(getSkinText(c.melanin));
+    const detailStr = details.length > 0 ? ` [${details.join(', ')}]` : '';
+    return `${c.name}${detailStr}${c.desc ? ` - ${c.desc}` : ''}`;
+  }).join(' | ');
 
   const pushToCloud = async () => {
     if (!user || !isRealUser) return;
@@ -276,36 +306,45 @@ const App = () => {
   const updateSketch = (id, field, value) => setSketches(sketches.map(s => s.id === id ? { ...s, [field]: value } : s));
   const updateShot = (id, field, value) => setShots(shots.map(s => s.id === id ? { ...s, [field]: value } : s));
   
-  const addCharacter = () => updateSketch(activeSketchId, 'characterProfiles', [...activeProfiles, { id: Date.now().toString(), name: 'New Character', desc: '' }]);
+  const addCharacter = () => updateSketch(activeSketchId, 'characterProfiles', [...activeProfiles, { id: Date.now().toString(), name: 'New Character', age: 30, gender: 50, melanin: 50, archetype: 'The Wildcard', desc: '', image: null }]);
   const updateChar = (charId, field, value) => updateSketch(activeSketchId, 'characterProfiles', activeProfiles.map(p => p.id === charId ? { ...p, [field]: value } : p));
   const removeChar = (charId) => updateSketch(activeSketchId, 'characterProfiles', activeProfiles.filter(p => p.id !== charId));
 
   const handleImageUpload = (shotId, event) => {
     const file = event.target.files?.[0];
     if (!file) return;
-
     const reader = new FileReader();
     reader.onload = (e) => {
       const img = new Image();
       img.onload = () => {
         const canvas = document.createElement('canvas');
-        let width = img.width;
-        let height = img.height;
+        let width = img.width; let height = img.height;
         const MAX_WIDTH = 800; 
+        if (width > MAX_WIDTH) { height = Math.round((height * MAX_WIDTH) / width); width = MAX_WIDTH; }
+        canvas.width = width; canvas.height = height;
+        const ctx = canvas.getContext('2d'); ctx.drawImage(img, 0, 0, width, height);
+        updateShot(shotId, 'image', canvas.toDataURL('image/jpeg', 0.7));
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  };
 
-        if (width > MAX_WIDTH) {
-          height = Math.round((height * MAX_WIDTH) / width);
-          width = MAX_WIDTH;
-        }
-
-        canvas.width = width;
-        canvas.height = height;
-
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0, width, height);
-
-        const compressedBase64 = canvas.toDataURL('image/jpeg', 0.7);
-        updateShot(shotId, 'image', compressedBase64);
+  const handleCharImageUpload = (charId, event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width; let height = img.height;
+        const MAX = 200; // Smaller size for avatars
+        if (width > height) { if (width > MAX) { height *= MAX / width; width = MAX; } } 
+        else { if (height > MAX) { width *= MAX / height; height = MAX; } }
+        canvas.width = width; canvas.height = height;
+        const ctx = canvas.getContext('2d'); ctx.drawImage(img, 0, 0, width, height);
+        updateChar(charId, 'image', canvas.toDataURL('image/jpeg', 0.8));
       };
       img.src = e.target.result;
     };
@@ -352,7 +391,7 @@ const App = () => {
   };
 
   const exportSnapshot = () => {
-    const data = { version: "2.1", timestamp: new Date().toISOString(), sketches, shots };
+    const data = { version: "2.2", timestamp: new Date().toISOString(), sketches, shots };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a'); link.href = url; link.download = `SketchShot_Backup_${new Date().getTime()}.json`;
@@ -413,9 +452,8 @@ const App = () => {
     }
   };
 
-  // --- THE FULLY QUALIFIED AI ENGINE ---
+  // --- THE BULLETPROOF AI ENGINE (1.5 Flash) ---
   const callGemini = async (prompt, systemPrompt = "", isJson = false) => {
-    // Clean the key just in case an invisible space was copied/pasted
     const activeKey = (userApiKey || apiKey).trim();
     
     if (!activeKey) {
@@ -432,7 +470,7 @@ const App = () => {
           const payload = { contents: [{ parts: [{ text: prompt }] }], systemInstruction: { parts: [{ text: systemPrompt }] } };
           if (isJson) payload.generationConfig = { responseMimeType: "application/json" };
           
-          const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${activeKey}`, {
+          const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${activeKey}`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
           });
           
@@ -613,7 +651,7 @@ const App = () => {
     const char = activeProfiles.find(c => c.id === charId);
     try {
       const existing = char.desc ? `CURRENT DETAILS (YES, AND... THESE): "${char.desc}"\n` : '';
-      const prompt = `Scene: ${formattedSceneHeading}\nSketch Hook: ${activeSketch?.hook}\nCharacter Name: ${char.name}\n${existing}Task: Write a 1-2 sentence absurd, highly specific character description, vibe, or fatal flaw. If current details exist, KEEP them and ESCALATE them. Think disruptive/cringe comedy.`;
+      const prompt = `Scene: ${formattedSceneHeading}\nSketch Hook: ${activeSketch?.hook}\nCharacter Name: ${char.name}\nCharacter Tropes: ${char.archetype}, ${char.age} years old, ${getGenderText(char.gender)}, ${getSkinText(char.melanin)}\n${existing}Task: Write a 1-2 sentence absurd, highly specific character description, vibe, or fatal flaw. If current details exist, KEEP them and ESCALATE them. Think disruptive/cringe comedy.`;
       const newDesc = await callGemini(prompt, `Expert comedy writer (${activeSketch?.tone || 'comedic'} humor).`, false);
       if (newDesc) updateChar(charId, 'desc', newDesc.trim());
     } catch(err) { console.error(err); } finally { setLoadingStates(prev => ({ ...prev, [`char-${charId}`]: false })); }
@@ -624,7 +662,8 @@ const App = () => {
     const charContext = shot.shotCharacters?.length > 0 
       ? shot.shotCharacters.map(n => {
           const profile = activeProfiles.find(p => p.name === n);
-          return profile?.desc ? `${n} (${profile.desc})` : n;
+          if (!profile) return n;
+          return `${n} (${profile.age}yo, ${getGenderText(profile.gender || 50)}, ${getSkinText(profile.melanin || 50)}. ${profile.desc || ''})`;
         }).join(', ') 
       : richCharactersContext;
 
@@ -914,14 +953,14 @@ const App = () => {
                       </button>
                     </>
                   )}
-                  <button onClick={() => setIsDetailsExpanded(!isDetailsExpanded)} className="p-3 md:p-2.5 bg-zinc-800 hover:bg-zinc-700 rounded-full text-zinc-400 transition-colors border border-zinc-700 shrink-0">
-                    {isDetailsExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                  </button>
                 </div>
               </div>
 
               {!isDetailsExpanded && (
                 <div className="flex flex-wrap items-center gap-3 md:gap-4 text-[10px] md:text-xs font-bold text-zinc-500 mt-4 md:mt-6 border-t border-zinc-800/50 pt-4">
+                  <button onClick={() => setIsDetailsExpanded(true)} className="flex items-center gap-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 px-3 py-1.5 rounded-full transition-colors mr-2 shadow-md">
+                    <Settings2 size={12} /> EDIT SCRIPT DETAILS
+                  </button>
                   <span className="text-orange-500 flex items-center gap-1 shrink-0"><Map size={12}/> {formattedSceneHeading}</span>
                   <span className="text-purple-400 flex items-center gap-1 shrink-0"><VenetianMask size={12}/> {activeSketch?.tone || 'No Tone'}</span>
                   <span className="text-blue-400 flex items-center gap-1 shrink-0"><ImageIcon size={12}/> {activeSketch?.imageStyle || 'Pencil Sketch'}</span>
@@ -930,8 +969,13 @@ const App = () => {
               )}
 
               {isDetailsExpanded && (
-                <div className="space-y-6 md:space-y-8 animate-in fade-in slide-in-from-top-4 duration-300 mt-6 md:mt-8 w-full">
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6 pt-4 border-t border-zinc-800/50">
+                <div className="space-y-6 md:space-y-8 animate-in fade-in slide-in-from-top-4 duration-300 mt-6 md:mt-8 w-full border border-zinc-800 bg-zinc-900/20 p-6 md:p-8 rounded-[2rem] relative">
+                  
+                  <button onClick={() => setIsDetailsExpanded(false)} className="absolute top-4 right-4 p-2 bg-zinc-800 hover:bg-zinc-700 rounded-full text-zinc-400 transition-colors border border-zinc-700 z-10 shadow-md">
+                    <ChevronUp size={16} />
+                  </button>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
                     {['hook', 'escalation', 'ending'].map((beat) => (
                       <div key={beat} className="space-y-2">
                         <label className="text-[10px] font-black text-orange-500 uppercase tracking-widest flex items-center justify-between">
@@ -940,12 +984,12 @@ const App = () => {
                             <button onClick={() => generateNarrativeBeat(beat)} disabled={!isRealUser || isAIBusy} className="p-1 hover:bg-orange-500/20 rounded transition-colors disabled:opacity-50">{!isRealUser ? <Lock size={12} className="text-orange-500" /> : <Sparkles size={12} className="text-orange-500" />}</button>
                           )}
                         </label>
-                        <textarea value={activeSketch?.[beat] || ''} onChange={(e) => updateSketch(activeSketchId, beat, e.target.value)} className="w-full bg-zinc-900/50 border border-zinc-800 rounded-xl p-3 text-sm focus:outline-none min-h-[80px] resize-none" />
+                        <textarea value={activeSketch?.[beat] || ''} onChange={(e) => updateSketch(activeSketchId, beat, e.target.value)} className="w-full bg-zinc-950/50 border border-zinc-800 rounded-xl p-3 text-sm focus:outline-none min-h-[80px] resize-none" />
                       </div>
                     ))}
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-5 gap-4 bg-zinc-900/20 p-4 rounded-2xl border border-zinc-800 w-full">
+                  <div className="grid grid-cols-1 sm:grid-cols-5 gap-4">
                     <div className="space-y-1 sm:col-span-2">
                       <span className="text-[9px] font-black text-zinc-600 uppercase">Scene Heading</span>
                       <div className="flex bg-zinc-950/50 rounded-xl border border-zinc-800 focus-within:border-orange-500/50 overflow-hidden shadow-inner">
@@ -984,18 +1028,52 @@ const App = () => {
                       </label>
                       <button onClick={addCharacter} className="text-[10px] font-black text-zinc-500 hover:text-green-400 flex items-center gap-1 transition-colors"><Plus size={10} /> ADD CHARACTER</button>
                     </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
                       {activeProfiles.map(char => (
-                        <div key={char.id} className="bg-zinc-900/40 border border-zinc-800 rounded-2xl p-4 flex flex-col gap-3 relative group transition-all hover:border-zinc-700">
-                          <button onClick={() => removeChar(char.id)} className="absolute top-3 right-3 p-1.5 bg-zinc-950/50 rounded-lg text-zinc-600 hover:text-red-400 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity border border-zinc-800"><Trash2 size={12} /></button>
-                          <div className="flex items-center gap-2 pr-8">
-                             <UserPlus size={14} className="text-green-500/50" />
-                             <input value={char.name || ''} onChange={(e) => updateChar(char.id, 'name', e.target.value)} placeholder="Character Name" className="bg-transparent text-sm font-black focus:outline-none text-zinc-200 w-full" />
+                        <div key={char.id} className="bg-zinc-950/80 border border-zinc-800 rounded-[1.5rem] p-5 flex flex-col gap-4 relative group transition-all hover:border-zinc-700 shadow-inner">
+                          <button onClick={() => removeChar(char.id)} className="absolute top-4 right-4 p-1.5 bg-zinc-900/80 rounded-full text-zinc-600 hover:text-red-400 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity border border-zinc-700 z-10"><Trash2 size={12} /></button>
+                          
+                          <div className="flex gap-4 items-center pr-8">
+                            <div className="w-14 h-14 bg-zinc-900 rounded-full overflow-hidden flex-shrink-0 relative group/avatar border border-zinc-800">
+                               {char.image ? <img src={char.image} className="w-full h-full object-cover"/> : <User size={24} className="m-auto mt-4 text-zinc-700"/>}
+                               <input type="file" accept="image/*" onChange={(e) => handleCharImageUpload(char.id, e)} className="hidden" id={`char-img-${char.id}`} />
+                               <label htmlFor={`char-img-${char.id}`} className="absolute inset-0 bg-black/60 opacity-0 group-hover/avatar:opacity-100 flex items-center justify-center cursor-pointer transition-opacity">
+                                  <Upload size={14} className="text-white"/>
+                               </label>
+                            </div>
+                            <div className="flex-1 space-y-1">
+                               <input value={char.name || ''} onChange={(e) => updateChar(char.id, 'name', e.target.value)} placeholder="Character Name" className="bg-transparent text-lg font-black focus:outline-none text-zinc-200 w-full placeholder-zinc-700" />
+                               <select value={char.archetype || 'The Wildcard'} onChange={(e) => updateChar(char.id, 'archetype', e.target.value)} className="bg-zinc-900 text-purple-400 text-[10px] font-bold px-2 py-1 rounded border border-zinc-800 focus:outline-none cursor-pointer w-full">
+                                  {COMEDY_ARCHETYPES.map(a => <option key={a} value={a}>{a}</option>)}
+                               </select>
+                            </div>
                           </div>
-                          <div className="relative">
-                            <textarea value={char.desc || ''} onChange={(e) => updateChar(char.id, 'desc', e.target.value)} placeholder="Vibe, wardrobe, fatal flaw..." className="w-full bg-zinc-950/50 rounded-xl p-3 text-xs text-zinc-400 resize-none focus:outline-none border border-zinc-800/50 focus:border-green-500/30 h-20" />
+
+                          <div className="grid grid-cols-2 gap-4 pt-2 border-t border-zinc-800/50">
+                            <div className="space-y-1.5">
+                              <div className="flex justify-between text-[8px] text-zinc-500 font-black uppercase tracking-widest">
+                                <span>Age</span><span className="text-zinc-300">{char.age || 30}</span>
+                              </div>
+                              <input type="range" min="1" max="100" value={char.age || 30} onChange={(e) => updateChar(char.id, 'age', e.target.value)} className="w-full h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-green-500" />
+                            </div>
+                            <div className="space-y-1.5">
+                              <div className="flex justify-between text-[8px] text-zinc-500 font-black uppercase tracking-widest">
+                                <span>Fem</span><span>Masc</span>
+                              </div>
+                              <input type="range" min="0" max="100" value={char.gender !== undefined ? char.gender : 50} onChange={(e) => updateChar(char.id, 'gender', e.target.value)} className="w-full h-1 bg-gradient-to-r from-pink-500/50 via-zinc-800 to-blue-500/50 rounded-lg appearance-none cursor-pointer accent-zinc-300" />
+                            </div>
+                            <div className="space-y-1.5 col-span-2">
+                              <div className="flex justify-between text-[8px] text-zinc-500 font-black uppercase tracking-widest">
+                                <span>Light Skin</span><span>Dark Skin</span>
+                              </div>
+                              <input type="range" min="0" max="100" value={char.melanin !== undefined ? char.melanin : 50} onChange={(e) => updateChar(char.id, 'melanin', e.target.value)} className="w-full h-1 bg-gradient-to-r from-[#f1c27d]/50 via-[#c08253]/50 to-[#3e2311]/50 rounded-lg appearance-none cursor-pointer accent-zinc-300" />
+                            </div>
+                          </div>
+
+                          <div className="relative mt-2">
+                            <textarea value={char.desc || ''} onChange={(e) => updateChar(char.id, 'desc', e.target.value)} placeholder="Fatal flaw, weird physical traits, strange wardrobe..." className="w-full bg-zinc-900 rounded-xl p-3 text-xs text-zinc-300 resize-none focus:outline-none border border-zinc-800 focus:border-green-500/50 h-24" />
                             {aiEnabled && (
-                              <button onClick={() => generateCharDesc(char.id)} disabled={!isRealUser || isAIBusy} className="absolute bottom-2 right-2 p-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-400 hover:text-green-400 transition-colors disabled:opacity-50" title="Generate character flaw">
+                              <button onClick={() => generateCharDesc(char.id)} disabled={!isRealUser || isAIBusy} className="absolute bottom-2 right-2 p-1.5 bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 rounded-lg text-zinc-400 hover:text-green-400 transition-colors disabled:opacity-50 shadow-md" title="Generate character flaw">
                                 {loadingStates[`char-${char.id}`] ? <Loader2 size={10} className="animate-spin text-green-500" /> : (!isRealUser ? <Lock size={10} /> : <Sparkles size={10} />)}
                               </button>
                             )}
@@ -1072,7 +1150,7 @@ const App = () => {
                                       </button>
                                       <button 
                                         onClick={() => generateImage(shot.id)} 
-                                        disabled={!isPersonalKeyActive || loadingStates[`image-${shot.id}`]}
+                                        disabled={!isPersonalKeyActive || loadingStates[`image-${shot.id}`] || isAIBusy}
                                         className={`text-[9px] font-black flex items-center gap-1 transition-colors uppercase tracking-widest px-3 py-1.5 rounded border ${isPersonalKeyActive ? 'text-zinc-300 bg-purple-600/20 border-purple-500/30 hover:bg-purple-600 hover:text-white' : 'text-zinc-600 bg-zinc-900 border-zinc-800 opacity-50'}`}
                                         title={!isPersonalKeyActive ? "Requires personal API Key in sidebar" : "Generate Image"}
                                       >
