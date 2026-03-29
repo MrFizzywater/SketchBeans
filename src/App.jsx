@@ -155,17 +155,18 @@ const App = () => {
         if (!snap.empty) setShots(snap.docs.map(d => ({id: d.id, ...d.data()})));
         isInitialLoad.current.shots = false;
       }
-    });
+    }, (err) => console.error("Shots sync error:", err));
 
-    // Public "Writer's Room" Subscriptions
+    // Public "Writer's Room" Subscriptions (Now with error catchers so it doesn't crash)
     const unsubPubSketches = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'shared_sketches'), (snap) => {
       setPublicSketches(snap.docs.map(d => ({id: d.id, ...d.data()})));
       isInitialLoad.current.pubSketches = false;
-    });
+    }, (err) => console.warn("Writer's Room access denied. Check Firebase Rules:", err.message));
+
     const unsubPubShots = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'shared_shots'), (snap) => {
       setPublicShots(snap.docs.map(d => ({id: d.id, ...d.data()})));
       isInitialLoad.current.pubShots = false;
-    });
+    }, (err) => console.warn("Writer's Room shots access denied. Check Firebase Rules:", err.message));
 
     return () => { unsubSketches(); unsubShots(); unsubPubSketches(); unsubPubShots(); };
   }, [isRealUser, user]);
