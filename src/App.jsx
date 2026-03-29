@@ -6,7 +6,7 @@ import {
   X, Download, Upload, Save, Maximize2, Map, 
   ChevronUp, ChevronDown, 
   UserPlus, ArrowUp, ArrowDown, Cloud, GitBranch, LogOut, Lock, Copy, Menu,
-  ScrollText, VenetianMask, Clapperboard, Key, EyeOff, User, Settings2, Users, Settings, Video, RefreshCcw, ArrowDownToLine, ArrowUpFromLine
+  ScrollText, VenetianMask, Clapperboard, Key, EyeOff, User, Settings2, Users, Settings, Video, RefreshCcw, ArrowDownToLine, ArrowUpFromLine, Undo
 } from 'lucide-react';
 
 // --- FIREBASE IMPORTS ---
@@ -107,6 +107,9 @@ const App = () => {
   const [userApiKey, setUserApiKey] = useState(localStorage.getItem('sketchshot_gemini_key') || '');
   const [aiEnabled, setAiEnabled] = useState(localStorage.getItem('sketchshot_ai_enabled') === 'true');
 
+  // --- UNDO HISTORY STATE ---
+  const [history, setHistory] = useState({});
+
   const [isSyncing, setIsSyncing] = useState(false);
   const isInitialLoad = useRef({ sketches: true, shots: true, pubSketches: true, pubShots: true });
   const [boardCols, setBoardCols] = useState(2);
@@ -142,8 +145,18 @@ const App = () => {
 
   useEffect(() => {
     if (!user || !isRealUser) return;
+    const trackPresence = async () => {
+      try {
+        const userRef = doc(db, 'artifacts', appId, 'public', 'data', 'users', user.uid);
+        await setDoc(userRef, { email: user.email, displayName: user.displayName || 'Unknown Crew', lastSeen: new Date().toISOString(), uid: user.uid }, { merge: true });
+      } catch (err) {}
+    };
+    trackPresence();
+  }, [isRealUser, user]);
+
+  useEffect(() => {
+    if (!user || !isRealUser) return;
     
-    // Private Subscriptions
     const unsubSketches = onSnapshot(collection(db, 'artifacts', appId, 'users', user.uid, 'sketches'), (snap) => {
       if (isInitialLoad.current.sketches) {
         if (!snap.empty) setSketches(snap.docs.map(d => ({id: d.id, ...d.data()})));
@@ -155,9 +168,8 @@ const App = () => {
         if (!snap.empty) setShots(snap.docs.map(d => ({id: d.id, ...d.data()})));
         isInitialLoad.current.shots = false;
       }
-    }, (err) => console.error("Shots sync error:", err));
+    });
 
-    // Public "Writer's Room" Subscriptions (Now with error catchers so it doesn't crash)
     const unsubPubSketches = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'shared_sketches'), (snap) => {
       setPublicSketches(snap.docs.map(d => ({id: d.id, ...d.data()})));
       isInitialLoad.current.pubSketches = false;
@@ -203,6 +215,11 @@ const App = () => {
             <button onClick={() => loginWithProvider('github')} className="w-full flex justify-center items-center gap-3 px-4 py-3 sm:py-4 text-xs font-black bg-zinc-800 hover:bg-zinc-700 text-white rounded-2xl transition-all border border-zinc-700 hover:border-zinc-500 shadow-lg hover:shadow-xl hover:-translate-y-0.5"><GitBranch size={16} /> CONTINUE WITH GITHUB</button>
             <button onClick={() => setIsGuest(true)} className="w-full flex justify-center items-center gap-3 px-4 py-3 sm:py-4 text-xs font-black bg-transparent hover:bg-zinc-800/50 text-zinc-500 hover:text-zinc-300 rounded-2xl transition-all mt-2">CONTINUE AS GUEST (Manual Mode)</button>
           </div>
+          
+          <div className="pt-2">
+            <p className="text-[9px] sm:text-[10px] text-zinc-600 uppercase tracking-widest font-bold mb-3">AI Features Require Login</p>
+            <p className="text-[9px] text-orange-500/80 font-bold max-w-[250px] mx-auto leading-tight border border-orange-500/20 bg-orange-500/5 p-2 rounded-lg"><AlertCircle size={10} className="inline mr-1 -mt-0.5"/> If you opened this from a social app, tap the dots in the corner and select "Open in System Browser" to log in.</p>
+          </div>
         </div>
       </div>
     );
@@ -220,7 +237,6 @@ const App = () => {
     return `${c.name}${details.length > 0 ? ` [${details.join(', ')}]` : ''}${c.desc ? ` - ${c.desc}` : ''}`;
   }).join(' | ');
 
-  // --- THE COLLABORATION / SYNC ENGINE ---
   const pushToCloud = async () => {
     if (!user || !isRealUser) return;
     setIsSyncing(true);
@@ -251,7 +267,6 @@ const App = () => {
     
     setActiveSketchId(pubId);
     
-    // Auto-sync to public DB
     if (isRealUser) {
       await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'shared_sketches', pubId), pubSketch);
       for (const shot of pubShots) await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'shared_shots', shot.id), shot);
@@ -322,8 +337,6 @@ const App = () => {
     updateContextState(prev => prev.map(s => s.id === id ? { ...s, [field]: value, ...editorTag } : s), false);
   };
   
-  // ------------------------------------------
-
   const confirmDeleteSketch = async () => {
     if (!sketchToDelete) return;
     const id = sketchToDelete.id;
@@ -473,7 +486,7 @@ const App = () => {
   };
 
   const exportSnapshot = () => {
-    const data = { version: "4.0", timestamp: new Date().toISOString(), sketches, shots, publicSketches, publicShots };
+    const data = { version: "4.1", timestamp: new Date().toISOString(), sketches, shots, publicSketches, publicShots };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a'); link.href = url; link.download = `SketchShot_Backup_${new Date().getTime()}.json`;
@@ -544,6 +557,7 @@ const App = () => {
     }
   };
 
+  // --- THE AI ENGINE ---
   const callGemini = async (prompt, systemPrompt = "", isJson = false) => {
     const activeKey = (userApiKey || apiKey).trim();
     if (!activeKey) {
@@ -572,7 +586,7 @@ const App = () => {
           
         } catch (error) {
           if (i === maxRetries - 1) { 
-            if (error.message === "429") alert(`Union Break! The AI hit a rate limit (Error 429).${!userApiKey ? " Try entering your own API key in the sidebar to bypass the shared limits!" : " Your API key is generating too fast."} Give it 30 seconds to breathe.`); 
+            if (error.message === "429") alert(`Union Break! The AI hit a rate limit. Give it 30 seconds to breathe.`); 
             else alert(`AI Error: ${error.message}`); 
             throw error; 
           }
@@ -582,12 +596,105 @@ const App = () => {
     } finally { setIsAIBusy(false); }
   };
 
+  // --- AI ACTIONS WITH UNDO CAPABILITY ---
+  
+  const generateTextAssist = async (shotId, field, rolePrompt, contextPrompt) => {
+    setLoadingStates(prev => ({ ...prev, [`${field}-${shotId}`]: true }));
+    const shot = activeShots.find(s => s.id === shotId);
+    try {
+      const charContext = shot.shotCharacters?.length > 0 ? shot.shotCharacters.map(n => activeProfiles.find(p => p.name === n)?.desc || n).join(', ') : richCharactersContext;
+      const existing = shot[field] ? `CURRENT TEXT (DO NOT ERASE, ESCALATE THIS): "${shot[field]}"` : `CURRENT TEXT: [Empty]`;
+      const prompt = `Scene: ${formattedSceneHeading}\nPremise: ${activeSketch?.premise}\n${contextPrompt}\nCharacters in shot: ${charContext}\nCamera Move: ${shot.cameraMove}\n${existing}`;
+      const newText = await callGemini(prompt, `${rolePrompt} Apply the 'Yes, And...' rule. If text exists, keep facts and punch it up. CRITICAL: Be extremely concise, direct, and blunt. No flowery prose. 1-2 short sentences max.`, false);
+      if (newText) {
+        setHistory(prev => ({ ...prev, [`shot-${shotId}-${field}`]: shot[field] || '' }));
+        updateShot(shotId, field, newText.trim());
+      }
+    } catch (err) { console.error(err); } finally { setLoadingStates(prev => ({ ...prev, [`${field}-${shotId}`]: false })); }
+  };
+
+  const revertShotField = (shotId, field) => {
+    const key = `shot-${shotId}-${field}`;
+    if (history[key] !== undefined) {
+      updateShot(shotId, field, history[key]);
+      setHistory(prev => { const h = {...prev}; delete h[key]; return h; });
+    }
+  };
+
+  const generateNarrativeBeat = async (beatType) => {
+    setLoadingStates(prev => ({ ...prev, [beatType]: true }));
+    try {
+      const systemPrompt = `Brilliant comedy writer (${activeSketch?.tone || 'comedic'} humor). Provide a punchy, creative ${beatType} for the sketch. CRITICAL: Be extremely brief and direct. 1-2 short sentences maximum. Zero fluff.`;
+      const prompt = `Title: ${activeSketch?.title}\nScene Heading: ${formattedSceneHeading}\nCharacter Profiles: ${richCharactersContext}\nCurrent Premise: ${activeSketch?.premise}\nCurrent Hook: ${activeSketch?.hook}\nCurrent Escalation: ${activeSketch?.escalation}\nCurrent Ending: ${activeSketch?.ending}\nTask: Write/Improve the ${beatType.toUpperCase()}.`;
+      const newBeat = await callGemini(prompt, systemPrompt, false);
+      if (newBeat) {
+        setHistory(prev => ({ ...prev, [`sketch-${beatType}`]: activeSketch[beatType] || '' }));
+        updateSketch(activeSketchId, beatType, newBeat.trim());
+      }
+    } catch (err) { console.error(err); } finally { setLoadingStates(prev => ({ ...prev, [beatType]: false })); }
+  };
+
+  const revertSketchField = (field) => {
+    const key = `sketch-${field}`;
+    if (history[key] !== undefined) {
+      updateSketch(activeSketchId, field, history[key]);
+      setHistory(prev => { const h = {...prev}; delete h[key]; return h; });
+    }
+  };
+
+  const generateCharDesc = async (charId) => {
+    setLoadingStates(prev => ({ ...prev, [`char-${charId}`]: true }));
+    const char = activeProfiles.find(c => c.id === charId);
+    try {
+      const existing = char.desc ? `CURRENT DETAILS (YES, AND... THESE): "${char.desc}"\n` : '';
+      const prompt = `Scene: ${formattedSceneHeading}\nPremise: ${activeSketch?.premise}\nSketch Hook: ${activeSketch?.hook}\nCharacter Name: ${char.name}\nCharacter Tropes: ${char.archetype}, ${char.age} years old, ${getGenderText(char.gender)}, ${getSkinText(char.melanin)}\n${existing}Task: Write 1 absurd, highly specific character description or fatal flaw. CRITICAL: Extremely brief, direct, and punchy. No flowery prose. Maximum 15 words.`;
+      const newDesc = await callGemini(prompt, `Expert comedy writer (${activeSketch?.tone || 'comedic'} humor).`, false);
+      if (newDesc) {
+        setHistory(prev => ({ ...prev, [`char-${charId}-desc`]: char.desc || '' }));
+        updateChar(charId, 'desc', newDesc.trim());
+      }
+    } catch(err) { console.error(err); } finally { setLoadingStates(prev => ({ ...prev, [`char-${charId}`]: false })); }
+  };
+
+  const revertCharDesc = (charId) => {
+    const key = `char-${charId}-desc`;
+    if (history[key] !== undefined) {
+      updateChar(charId, 'desc', history[key]);
+      setHistory(prev => { const h = {...prev}; delete h[key]; return h; });
+    }
+  };
+
+  // --- AUTO-EXTRACT CHARACTERS ---
+  const extractCharacters = async () => {
+    setLoadingStates(prev => ({ ...prev, extractChars: true }));
+    try {
+      const systemPrompt = `Analyze the scene premise, hook, escalation, and ending. Identify distinct characters mentioned. Return a JSON array of objects with keys: "name" (string), "age" (number 1-100), "gender" (number 0-100, 0=femme, 100=masc), "melanin" (number 0-100, 0=light, 100=dark), "archetype" (choose best match from: ${COMEDY_ARCHETYPES.join(', ')}), "desc" (1 short punchy sentence). Do not invent characters not implied by the text.`;
+      const prompt = `Premise: ${activeSketch.premise}\nHook: ${activeSketch.hook}\nEscalation: ${activeSketch.escalation}\nEnding: ${activeSketch.ending}`;
+      const extracted = await callGemini(prompt, systemPrompt, true);
+      
+      if (extracted && Array.isArray(extracted) && extracted.length > 0) {
+         const newProfiles = extracted.map(c => ({
+           id: Date.now().toString() + Math.random().toString(36).substring(7),
+           name: c.name || 'Unknown',
+           age: c.age || 30,
+           gender: c.gender || 50,
+           melanin: c.melanin || 50,
+           archetype: COMEDY_ARCHETYPES.includes(c.archetype) ? c.archetype : 'The Wildcard',
+           desc: c.desc || '',
+           image: null
+         }));
+         updateSketch(activeSketchId, 'characterProfiles', [...activeProfiles, ...newProfiles]);
+      } else {
+        alert("No clear characters found to extract.");
+      }
+    } catch(e) { console.error(e); } finally { setLoadingStates(prev => ({ ...prev, extractChars: false })); }
+  };
+
+  // --- IMAGEN GENERATION ---
   const generateImage = async (shotId) => {
     const activeKey = userApiKey.trim();
-    if (!activeKey) {
-      alert("You need to enter your own personal Gemini API Key in the sidebar Settings to generate images.");
-      return;
-    }
+    if (!activeKey) return alert("You need to enter your own personal Gemini API Key in the sidebar Settings to generate images.");
+    
     setLoadingStates(prev => ({ ...prev, [`image-${shotId}`]: true }));
     const shot = activeShots.find(s => s.id === shotId);
     const promptText = getShotPrompt(shot);
@@ -600,10 +707,7 @@ const App = () => {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
               instances: { prompt: promptText }, 
-              parameters: { 
-                sampleCount: 1,
-                aspectRatio: activeSketch?.aspectRatio || '16:9'
-              } 
+              parameters: { sampleCount: 1, aspectRatio: activeSketch?.aspectRatio || '16:9' } 
             })
           });
 
@@ -629,7 +733,7 @@ const App = () => {
           break; 
         } catch (error) {
           if (i === maxRetries - 1) {
-            if (error.message === "429") alert(`Union Break! The Image AI hit a rate limit. Give it 30 seconds to breathe.`); 
+            if (error.message === "429") alert(`Union Break! The Image AI hit a rate limit.`); 
             else alert(`Image Error: ${error.message}`); 
             throw error; 
           }
@@ -637,6 +741,54 @@ const App = () => {
         }
       }
     } finally { setLoadingStates(prev => ({ ...prev, [`image-${shotId}`]: false })); }
+  };
+
+  const generateCharAvatar = async (charId) => {
+    const activeKey = userApiKey.trim();
+    if (!activeKey) return alert("You need your own personal Gemini API Key in the sidebar Settings.");
+    
+    setLoadingStates(prev => ({ ...prev, [`charImg-${charId}`]: true }));
+    const char = activeProfiles.find(c => c.id === charId);
+    const promptText = `A close-up cinematic headshot photograph of a ${char.age} year old ${getGenderText(char.gender)} with ${getSkinText(char.melanin)}. Vibe/Archetype: ${char.archetype}. Details: ${char.desc}. Plain neutral background. Highly detailed, photorealistic.`;
+
+    const maxRetries = 6; let delay = 3000;
+    try {
+      for (let i = 0; i < maxRetries; i++) {
+        try {
+          const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${globalImageModel}:predict?key=${activeKey}`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ instances: { prompt: promptText }, parameters: { sampleCount: 1, aspectRatio: '1:1' } })
+          });
+
+          if (response.status === 429) throw new Error("429");
+          if (!response.ok) throw new Error(`Google API threw a ${response.status}.`);
+
+          const result = await response.json();
+          const rawImageUrl = `data:image/png;base64,${result.predictions[0].bytesBase64Encoded}`;
+          
+          const img = new Image();
+          img.onload = () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = 256; canvas.height = 256;
+            const ctx = canvas.getContext('2d'); 
+            const size = Math.min(img.width, img.height);
+            const x = (img.width - size) / 2;
+            const y = (img.height - size) / 2;
+            ctx.drawImage(img, x, y, size, size, 0, 0, 256, 256);
+            updateChar(charId, 'image', canvas.toDataURL('image/jpeg', 0.8));
+          };
+          img.src = rawImageUrl;
+          break; 
+        } catch (error) {
+          if (i === maxRetries - 1) {
+            if (error.message === "429") alert(`Union Break! The Image AI hit a rate limit.`); 
+            else alert(`Image Error: ${error.message}`); 
+            throw error; 
+          }
+          await new Promise(r => setTimeout(r, delay)); delay *= 1.5; 
+        }
+      }
+    } finally { setLoadingStates(prev => ({ ...prev, [`charImg-${charId}`]: false })); }
   };
 
   const generateAISHots = async () => {
@@ -697,68 +849,6 @@ const App = () => {
         setViewMode('script');
       }
     } catch (err) { console.error(err); } finally { setLoadingStates(prev => ({ ...prev, script: false })); }
-  };
-
-  const generateTextAssist = async (shotId, field, rolePrompt, contextPrompt) => {
-    setLoadingStates(prev => ({ ...prev, [`${field}-${shotId}`]: true }));
-    const shot = activeShots.find(s => s.id === shotId);
-    try {
-      const charContext = shot.shotCharacters?.length > 0 ? shot.shotCharacters.map(n => activeProfiles.find(p => p.name === n)?.desc || n).join(', ') : richCharactersContext;
-      const existing = shot[field] ? `CURRENT TEXT (DO NOT ERASE, ESCALATE THIS): "${shot[field]}"` : `CURRENT TEXT: [Empty]`;
-      const prompt = `Scene: ${formattedSceneHeading}\nPremise: ${activeSketch?.premise}\n${contextPrompt}\nCharacters in shot: ${charContext}\nCamera Move: ${shot.cameraMove}\n${existing}`;
-      const newText = await callGemini(prompt, `${rolePrompt} Apply the 'Yes, And...' rule. If text exists, keep facts and punch it up. CRITICAL: Be extremely concise, direct, and blunt. No flowery prose. 1-2 short sentences max.`, false);
-      if (newText) updateShot(shotId, field, newText.trim());
-    } catch (err) { console.error(err); } finally { setLoadingStates(prev => ({ ...prev, [`${field}-${shotId}`]: false })); }
-  };
-
-  const generateNarrativeBeat = async (beatType) => {
-    setLoadingStates(prev => ({ ...prev, [beatType]: true }));
-    try {
-      const systemPrompt = `Brilliant comedy writer (${activeSketch?.tone || 'comedic'} humor). Provide a punchy, creative ${beatType} for the sketch. CRITICAL: Be extremely brief and direct. 1-2 short sentences maximum. Zero fluff.`;
-      const prompt = `Title: ${activeSketch?.title}\nScene Heading: ${formattedSceneHeading}\nCharacter Profiles: ${richCharactersContext}\nCurrent Premise: ${activeSketch?.premise}\nCurrent Hook: ${activeSketch?.hook}\nCurrent Escalation: ${activeSketch?.escalation}\nCurrent Ending: ${activeSketch?.ending}\nTask: Write/Improve the ${beatType.toUpperCase()}.`;
-      const newBeat = await callGemini(prompt, systemPrompt, false);
-      if (newBeat) updateSketch(activeSketchId, beatType, newBeat.trim());
-    } catch (err) { console.error(err); } finally { setLoadingStates(prev => ({ ...prev, [beatType]: false })); }
-  };
-
-  const generateCharDesc = async (charId) => {
-    setLoadingStates(prev => ({ ...prev, [`char-${charId}`]: true }));
-    const char = activeProfiles.find(c => c.id === charId);
-    try {
-      const existing = char.desc ? `CURRENT DETAILS (YES, AND... THESE): "${char.desc}"\n` : '';
-      const prompt = `Scene: ${formattedSceneHeading}\nPremise: ${activeSketch?.premise}\nSketch Hook: ${activeSketch?.hook}\nCharacter Name: ${char.name}\nCharacter Tropes: ${char.archetype}, ${char.age} years old, ${getGenderText(char.gender)}, ${getSkinText(char.melanin)}\n${existing}Task: Write 1 absurd, highly specific character description or fatal flaw. CRITICAL: Extremely brief, direct, and punchy. No flowery prose. Maximum 15 words.`;
-      const newDesc = await callGemini(prompt, `Expert comedy writer (${activeSketch?.tone || 'comedic'} humor).`, false);
-      if (newDesc) updateChar(charId, 'desc', newDesc.trim());
-    } catch(err) { console.error(err); } finally { setLoadingStates(prev => ({ ...prev, [`char-${charId}`]: false })); }
-  };
-
-  const getShotPrompt = (shot) => {
-    const charContext = shot.shotCharacters?.length > 0 
-      ? shot.shotCharacters.map(n => {
-          const profile = activeProfiles.find(p => p.name === n);
-          if (!profile) return n;
-          return `${n} (${profile.age}yo, ${getGenderText(profile.gender || 50)}, ${getSkinText(profile.melanin || 50)}. ${profile.desc || ''})`;
-        }).join(', ') 
-      : richCharactersContext;
-
-    const location = shot.locationCaveat || formattedSceneHeading;
-    const style = activeSketch?.imageStyle || 'Pencil Sketch';
-    
-    let stylePrefix = "Rough storyboard sketch, mixed media graphite and colored pencil.";
-    if (style === 'Photographic') stylePrefix = "High-resolution photograph, photorealistic, 85mm lens.";
-    else if (style === 'Cinematic') stylePrefix = "Cinematic movie still, anamorphic lens, dramatic lighting, highly detailed.";
-    else if (style === 'Comic Book') stylePrefix = "Comic book panel, ink outlines, vivid colors, graphic novel style.";
-    else if (style === 'Watercolor') stylePrefix = "Expressive watercolor painting, loose artistic brush strokes.";
-    else if (style === '3D Render') stylePrefix = "High-quality 3D render, stylized but detailed, cinematic lighting.";
-    else if (style === 'Vintage Film') stylePrefix = "Vintage 35mm film still, grainy, retro color grading, nostalgic aesthetic.";
-
-    let prompt = `Sketch Context: ${activeSketch?.premise || activeSketch?.title}. Focus on creating a storyboard panel for THIS SPECIFIC SHOT: A ${shot.type} shot of ${shot.subject}. Location: ${location}. `;
-    if (shot.cameraMove !== 'Locked Off') prompt += `Framed for a ${shot.cameraMove} camera movement. `;
-    if (shot.action) prompt += `Action: ${shot.action} `;
-    if (charContext) prompt += `Featuring: ${charContext}. `;
-    if (shot.notes) prompt += `Visual Notes: ${shot.notes}. `;
-    prompt += `${stylePrefix} PURE ARTWORK ONLY. NO TEXT, NO WORDS, NO TITLES, NO WATERMARKS in the image.`;
-    return prompt;
   };
 
   const gridColsClass = {
@@ -909,7 +999,7 @@ const App = () => {
         <nav className="flex-1 overflow-y-auto px-3 space-y-1 pb-4">
           <div className="text-[10px] font-black text-zinc-600 uppercase tracking-widest px-3 mb-2">My Private Sketches</div>
           {sketches.map(sketch => (
-            <div key={sketch.id} className={`w-full group text-left px-3 py-2 rounded-lg flex items-center justify-between transition-colors ${activeSketchId === sketch.id ? 'bg-zinc-800 text-orange-400' : 'text-zinc-400 hover:bg-zinc-800/50'}`}>
+            <div key={sketch.id} className={`w-full group text-left px-3 py-2 rounded-lg flex items-center justify-between transition-colors ${activeSketchId === sketch.id && !isWritersRoom ? 'bg-zinc-800 text-orange-400' : 'text-zinc-400 hover:bg-zinc-800/50'}`}>
               <button onClick={() => { setActiveSketchId(sketch.id); if(window.innerWidth < 768) setSidebarOpen(false); }} className="flex items-center gap-3 flex-1 min-w-0">
                 <FileText size={16} className="shrink-0" /> <span className="truncate font-medium text-sm">{sketch.title || 'Untitled'}</span>
               </button>
@@ -923,7 +1013,7 @@ const App = () => {
           {/* PUBLIC WRITER'S ROOM LIST */}
           <div className="text-[10px] font-black text-blue-500 uppercase tracking-widest px-3 mt-8 mb-2 flex items-center gap-1"><Users size={12}/> The Writer's Room</div>
           {publicSketches.map(sketch => (
-            <div key={sketch.id} className={`w-full group text-left px-3 py-2 rounded-lg flex items-center justify-between transition-colors ${activeSketchId === sketch.id ? 'bg-blue-900/30 text-blue-400 border border-blue-500/20' : 'text-zinc-400 hover:bg-zinc-800/50 border border-transparent'}`}>
+            <div key={sketch.id} className={`w-full group text-left px-3 py-2 rounded-lg flex items-center justify-between transition-colors ${activeSketchId === sketch.id && isWritersRoom ? 'bg-blue-900/30 text-blue-400 border border-blue-500/20' : 'text-zinc-400 hover:bg-zinc-800/50 border border-transparent'}`}>
               <button onClick={() => { setActiveSketchId(sketch.id); if(window.innerWidth < 768) setSidebarOpen(false); }} className="flex items-center gap-3 flex-1 min-w-0">
                 <GitBranch size={16} className="shrink-0" /> <span className="truncate font-medium text-sm">{sketch.title || 'Untitled'}</span>
               </button>
@@ -1096,11 +1186,16 @@ const App = () => {
                 <div className="space-y-2 bg-zinc-900/40 p-6 md:p-8 rounded-[2.5rem] border border-zinc-800/50 shadow-inner">
                   <label className="text-[10px] font-black text-orange-500 uppercase tracking-widest flex items-center justify-between mb-2">
                     <span className="flex items-center gap-2"><div className="w-1.5 h-1.5 bg-orange-500 rounded-full" /> The Premise (Idea)</span>
-                    {aiEnabled && (
-                      <button onClick={() => generateNarrativeBeat('premise')} disabled={!isRealUser || isAIBusy} className="p-1.5 hover:bg-orange-500/20 rounded transition-colors disabled:opacity-50 text-orange-500 flex items-center gap-1 text-[9px]">
-                        {!isRealUser ? <Lock size={10} /> : <Sparkles size={10} />} GENERATE
-                      </button>
-                    )}
+                    <div className="flex items-center gap-1.5">
+                      {history[`sketch-premise`] !== undefined && (
+                        <button onClick={() => revertSketchField('premise')} className="p-1.5 hover:bg-zinc-800 rounded transition-colors text-zinc-500 hover:text-zinc-300" title="Undo AI edit"><Undo size={12}/></button>
+                      )}
+                      {aiEnabled && (
+                        <button onClick={() => generateNarrativeBeat('premise')} disabled={!isRealUser || isAIBusy} className="p-1.5 hover:bg-orange-500/20 rounded transition-colors disabled:opacity-50 text-orange-500 flex items-center gap-1 text-[9px]">
+                          {!isRealUser ? <Lock size={10} /> : <Sparkles size={10} />} GENERATE
+                        </button>
+                      )}
+                    </div>
                   </label>
                   <textarea value={activeSketch?.premise || ''} onChange={(e) => updateSketch(activeSketchId, 'premise', e.target.value)} placeholder="Describe the basic concept here to act as a seed for the AI... (e.g. A guy attends a deeply serious funeral but gets stuck in his mascot uniform.)" className="w-full bg-zinc-950/50 border border-zinc-800/80 rounded-xl p-4 md:p-6 text-sm focus:outline-none focus:border-orange-500/50 min-h-[100px] resize-y text-zinc-200" />
                 </div>
@@ -1110,9 +1205,14 @@ const App = () => {
                     <div key={beat} className="space-y-2 bg-zinc-900/30 p-5 rounded-[2rem] border border-zinc-800/50">
                       <label className="text-[10px] font-black text-orange-500 uppercase tracking-widest flex items-center justify-between mb-2">
                         <span className="flex items-center gap-2"><div className="w-1.5 h-1.5 bg-orange-500 rounded-full" /> The {beat}</span>
-                        {aiEnabled && (
-                          <button onClick={() => generateNarrativeBeat(beat)} disabled={!isRealUser || isAIBusy} className="p-1.5 hover:bg-orange-500/20 rounded transition-colors disabled:opacity-50">{!isRealUser ? <Lock size={12} className="text-orange-500" /> : <Sparkles size={12} className="text-orange-500" />}</button>
-                        )}
+                        <div className="flex items-center gap-1">
+                          {history[`sketch-${beat}`] !== undefined && (
+                            <button onClick={() => revertSketchField(beat)} className="p-1.5 hover:bg-zinc-800 rounded transition-colors text-zinc-500 hover:text-zinc-300" title="Undo AI edit"><Undo size={12}/></button>
+                          )}
+                          {aiEnabled && (
+                            <button onClick={() => generateNarrativeBeat(beat)} disabled={!isRealUser || isAIBusy} className="p-1.5 hover:bg-orange-500/20 rounded transition-colors disabled:opacity-50">{!isRealUser ? <Lock size={12} className="text-orange-500" /> : <Sparkles size={12} className="text-orange-500" />}</button>
+                          )}
+                        </div>
                       </label>
                       <textarea value={activeSketch?.[beat] || ''} onChange={(e) => updateSketch(activeSketchId, beat, e.target.value)} className="w-full bg-zinc-950/50 border border-zinc-800 rounded-xl p-4 text-sm focus:outline-none focus:border-orange-500/50 min-h-[120px] resize-none text-zinc-300" />
                     </div>
@@ -1167,7 +1267,14 @@ const App = () => {
               <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-zinc-800 pb-4">
                   <h2 className="text-xl md:text-2xl font-black uppercase tracking-tighter text-green-500 flex items-center gap-2"><Users size={24} /> Character Bible</h2>
-                  <button onClick={addCharacter} className="w-full sm:w-auto flex justify-center items-center gap-2 px-6 py-2.5 bg-green-600/10 text-green-500 hover:bg-green-600 hover:text-white border border-green-600/30 rounded-full text-xs font-black transition-all shadow-lg"><Plus size={14} /> ADD CHARACTER</button>
+                  <div className="flex gap-2 w-full sm:w-auto">
+                    {aiEnabled && (
+                      <button onClick={extractCharacters} disabled={!isRealUser || isAIBusy} className="flex-1 sm:flex-none justify-center items-center gap-2 px-4 py-2.5 bg-blue-600/10 text-blue-400 hover:bg-blue-600 hover:text-white border border-blue-600/30 rounded-full text-xs font-black transition-all shadow-lg flex">
+                        {loadingStates.extractChars ? <Loader2 size={14} className="animate-spin" /> : <Wand2 size={14} />} AUTO-EXTRACT
+                      </button>
+                    )}
+                    <button onClick={addCharacter} className="flex-1 sm:flex-none justify-center items-center gap-2 px-6 py-2.5 bg-green-600/10 text-green-500 hover:bg-green-600 hover:text-white border border-green-600/30 rounded-full text-xs font-black transition-all shadow-lg flex"><Plus size={14} /> ADD CHARACTER</button>
+                  </div>
                 </div>
                 
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -1179,9 +1286,14 @@ const App = () => {
                         <div className="w-20 h-20 sm:w-24 sm:h-24 bg-zinc-950 rounded-full overflow-hidden flex-shrink-0 relative group/avatar border-2 border-zinc-800 shadow-inner">
                            {char.image ? <img src={char.image} className="w-full h-full object-cover"/> : <User size={32} className="m-auto mt-6 sm:mt-8 text-zinc-700"/>}
                            <input type="file" accept="image/*" onChange={(e) => handleCharImageUpload(char.id, e)} className="hidden" id={`char-img-${char.id}`} />
-                           <label htmlFor={`char-img-${char.id}`} className="absolute inset-0 bg-black/60 opacity-0 group-hover/avatar:opacity-100 flex items-center justify-center cursor-pointer transition-opacity">
+                           <label htmlFor={`char-img-${char.id}`} className="absolute inset-0 bg-black/60 opacity-0 group-hover/avatar:opacity-100 flex flex-col items-center justify-center cursor-pointer transition-opacity z-10">
                               <Upload size={20} className="text-white"/>
                            </label>
+                           {aiEnabled && (
+                             <button onClick={() => generateCharAvatar(char.id)} disabled={!isRealUser || loadingStates[`charImg-${char.id}`]} className="absolute bottom-2 right-2 bg-purple-600/90 hover:bg-purple-500 p-2 rounded-full text-white shadow-lg opacity-0 group-hover/avatar:opacity-100 transition-opacity z-20 disabled:opacity-50" title="Generate AI Avatar">
+                               {loadingStates[`charImg-${char.id}`] ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+                             </button>
+                           )}
                         </div>
                         <div className="flex-1 space-y-2">
                            <input value={char.name || ''} onChange={(e) => updateChar(char.id, 'name', e.target.value)} placeholder="Character Name" className="bg-transparent text-2xl font-black focus:outline-none text-zinc-100 w-full placeholder-zinc-800 border-b border-zinc-800 focus:border-green-500 pb-1" />
@@ -1217,11 +1329,16 @@ const App = () => {
 
                       <div className="relative mt-2">
                         <textarea value={char.desc || ''} onChange={(e) => updateChar(char.id, 'desc', e.target.value)} placeholder="Fatal flaw, weird physical traits, strange wardrobe..." className="w-full bg-zinc-950/50 rounded-xl p-4 text-sm text-zinc-300 resize-none focus:outline-none border border-zinc-800/50 focus:border-green-500/50 h-28 leading-relaxed shadow-inner" />
-                        {aiEnabled && (
-                          <button onClick={() => generateCharDesc(char.id)} disabled={!isRealUser || isAIBusy} className="absolute bottom-3 right-3 p-2 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-400 hover:text-green-400 transition-colors disabled:opacity-50 shadow-md" title="Generate character flaw">
-                            {loadingStates[`char-${char.id}`] ? <Loader2 size={14} className="animate-spin text-green-500" /> : (!isRealUser ? <Lock size={14} /> : <Sparkles size={14} />)}
-                          </button>
-                        )}
+                        <div className="absolute bottom-3 right-3 flex items-center gap-1">
+                          {history[`char-${char.id}-desc`] !== undefined && (
+                            <button onClick={() => revertCharDesc(char.id)} className="p-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-500 hover:text-zinc-300 transition-colors shadow-md" title="Undo AI edit"><Undo size={14}/></button>
+                          )}
+                          {aiEnabled && (
+                            <button onClick={() => generateCharDesc(char.id)} disabled={!isRealUser || isAIBusy} className="p-2 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-400 hover:text-green-400 transition-colors disabled:opacity-50 shadow-md" title="Generate character flaw">
+                              {loadingStates[`char-${char.id}`] ? <Loader2 size={14} className="animate-spin text-green-500" /> : (!isRealUser ? <Lock size={14} /> : <Sparkles size={14} />)}
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -1345,13 +1462,7 @@ const App = () => {
                               </div>
                             )}
                           </div>
-                          
-                          {/* COLLABORATION BADGE */}
-                          {shot.lastEditedBy && isWritersRoom && (
-                            <div className="mt-2 text-[9px] text-blue-400 italic">Last edit by: {shot.lastEditedBy}</div>
-                          )}
-
-                          <div className="flex flex-col gap-2 w-full mt-4">
+                          <div className="flex flex-col gap-2 w-full">
                             <div className="flex gap-2 w-full">
                               <select value={shot.type || 'Medium'} onChange={(e) => updateShot(shot.id, 'type', e.target.value)} className="flex-1 w-full bg-zinc-800 border border-zinc-700 rounded-xl p-3 md:p-2.5 text-xs font-bold focus:ring-1 ring-orange-500 appearance-none">{SHOT_TYPES.map(type => <option key={type} value={type}>{type}</option>)}</select>
                               <button onClick={() => updateShot(shot.id, 'fx', !shot.fx)} className={`px-4 py-3 md:py-2 rounded-xl text-[10px] font-black border ${shot.fx ? 'bg-orange-600 text-white border-orange-400' : 'bg-zinc-800 text-zinc-500 border-zinc-700'}`}>FX</button>
@@ -1379,9 +1490,14 @@ const App = () => {
                             
                             <div className="space-y-2 w-full">
                               <div className="flex items-center gap-2 text-[9px] font-black text-zinc-600 uppercase tracking-widest">
-                                {aiEnabled && (
-                                  <button onClick={() => generateTextAssist(shot.id, 'action', 'Director blocking physical comedy.', `Shot Subject: ${shot.subject}`)} disabled={!isRealUser || isAIBusy} className="p-1 hover:bg-orange-500/20 rounded disabled:opacity-50 shrink-0">{loadingStates[`action-${shot.id}`] ? <Loader2 size={12} className="animate-spin" /> : (!isRealUser ? <Lock size={12} className="text-orange-500" /> : <Clapperboard size={12} className="text-orange-500" />)}</button>
-                                )}
+                                <div className="flex items-center gap-1">
+                                  {history[`shot-${shot.id}-action`] !== undefined && (
+                                    <button onClick={() => revertShotField(shot.id, 'action')} className="p-1 hover:bg-zinc-800 rounded transition-colors text-zinc-500 hover:text-zinc-300" title="Undo AI edit"><Undo size={12}/></button>
+                                  )}
+                                  {aiEnabled && (
+                                    <button onClick={() => generateTextAssist(shot.id, 'action', 'Director blocking physical comedy.', `Shot Subject: ${shot.subject}`)} disabled={!isRealUser || isAIBusy} className="p-1 hover:bg-orange-500/20 rounded disabled:opacity-50 shrink-0 text-orange-500">{loadingStates[`action-${shot.id}`] ? <Loader2 size={12} className="animate-spin" /> : (!isRealUser ? <Lock size={12} /> : <Clapperboard size={12} />)}</button>
+                                  )}
+                                </div>
                                 Action / Blocking
                               </div>
                               <textarea value={shot.action || ''} onChange={(e) => updateShot(shot.id, 'action', e.target.value)} className="w-full bg-zinc-950/50 rounded-[1.5rem] p-4 text-xs text-zinc-300 min-h-[80px] md:min-h-[60px] focus:outline-none border border-zinc-800/50 focus:border-orange-500/50 resize-y" />
@@ -1390,18 +1506,28 @@ const App = () => {
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 w-full">
                               <div className="space-y-2 w-full">
                                 <div className="flex items-center gap-2 text-[9px] font-black text-zinc-600 uppercase tracking-widest">
-                                  {aiEnabled && (
-                                    <button onClick={() => generateTextAssist(shot.id, 'dialogue', 'Writer drafting dialogue.', `Subject: ${shot.subject}, Action: ${shot.action}`)} disabled={!isRealUser || isAIBusy} className="p-1 hover:bg-purple-500/20 rounded disabled:opacity-50 shrink-0">{loadingStates[`dialogue-${shot.id}`] ? <Loader2 size={12} className="animate-spin" /> : (!isRealUser ? <Lock size={12} className="text-purple-500" /> : <Quote size={12} className="text-purple-500" />)}</button>
-                                  )}
+                                  <div className="flex items-center gap-1">
+                                    {history[`shot-${shot.id}-dialogue`] !== undefined && (
+                                      <button onClick={() => revertShotField(shot.id, 'dialogue')} className="p-1 hover:bg-zinc-800 rounded transition-colors text-zinc-500 hover:text-zinc-300" title="Undo AI edit"><Undo size={12}/></button>
+                                    )}
+                                    {aiEnabled && (
+                                      <button onClick={() => generateTextAssist(shot.id, 'dialogue', 'Writer drafting dialogue.', `Subject: ${shot.subject}, Action: ${shot.action}`)} disabled={!isRealUser || isAIBusy} className="p-1 hover:bg-purple-500/20 rounded disabled:opacity-50 shrink-0 text-purple-500">{loadingStates[`dialogue-${shot.id}`] ? <Loader2 size={12} className="animate-spin" /> : (!isRealUser ? <Lock size={12} /> : <Quote size={12} />)}</button>
+                                    )}
+                                  </div>
                                   Dialogue / Improv
                                 </div>
                                 <textarea value={shot.dialogue || ''} onChange={(e) => updateShot(shot.id, 'dialogue', e.target.value)} className="w-full bg-zinc-950/50 rounded-[1.5rem] p-4 text-xs text-zinc-200 min-h-[100px] focus:outline-none border border-zinc-800/50 focus:border-purple-500/50 resize-y" />
                               </div>
                               <div className="space-y-2 w-full">
                                 <div className="flex items-center gap-2 text-[9px] font-black text-zinc-600 uppercase tracking-widest">
-                                  {aiEnabled && (
-                                    <button onClick={() => generateTextAssist(shot.id, 'notes', 'DP advising on camera/light.', `Type: ${shot.type}, Subject: ${shot.subject}`)} disabled={!isRealUser || isAIBusy} className="p-1 hover:bg-blue-500/20 rounded disabled:opacity-50 shrink-0">{loadingStates[`notes-${shot.id}`] ? <Loader2 size={12} className="animate-spin" /> : (!isRealUser ? <Lock size={12} className="text-blue-500" /> : <Wand2 size={12} className="text-blue-500" />)}</button>
-                                  )}
+                                  <div className="flex items-center gap-1">
+                                    {history[`shot-${shot.id}-notes`] !== undefined && (
+                                      <button onClick={() => revertShotField(shot.id, 'notes')} className="p-1 hover:bg-zinc-800 rounded transition-colors text-zinc-500 hover:text-zinc-300" title="Undo AI edit"><Undo size={12}/></button>
+                                    )}
+                                    {aiEnabled && (
+                                      <button onClick={() => generateTextAssist(shot.id, 'notes', 'DP advising on camera/light.', `Type: ${shot.type}, Subject: ${shot.subject}`)} disabled={!isRealUser || isAIBusy} className="p-1 hover:bg-blue-500/20 rounded disabled:opacity-50 shrink-0 text-blue-500">{loadingStates[`notes-${shot.id}`] ? <Loader2 size={12} className="animate-spin" /> : (!isRealUser ? <Lock size={12} /> : <Wand2 size={12} />)}</button>
+                                    )}
+                                  </div>
                                   Director Notes
                                 </div>
                                 <textarea value={shot.notes || ''} onChange={(e) => updateShot(shot.id, 'notes', e.target.value)} className="w-full bg-zinc-950/50 rounded-[1.5rem] p-4 text-xs text-zinc-400 min-h-[100px] focus:outline-none border border-zinc-800/50 focus:border-blue-500/50 resize-y italic" />
