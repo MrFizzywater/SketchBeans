@@ -345,7 +345,13 @@ const App = () => {
   // --- SYNC & COLLAB LOGIC ---
   const pushToCloud = async (silent = false) => {
     if (!user || !isRealUser) return;
-    if (!silent) setIsSyncing(true);
+    
+    let safetyTimer;
+    if (!silent) {
+      setIsSyncing(true);
+      // Hard timeout safety net to guarantee spinner releases even if Firebase hangs
+      safetyTimer = setTimeout(() => setIsSyncing(false), 3000); 
+    }
     
     try {
       if (isWritersRoom) {
@@ -365,7 +371,10 @@ const App = () => {
       if (!silent) alert(`Sync Failed: ${err.message}`);
       console.error("Sync error:", err);
     } finally {
-      if (!silent) setIsSyncing(false);
+      if (!silent) {
+        clearTimeout(safetyTimer);
+        setIsSyncing(false);
+      }
     }
   };
 
@@ -788,7 +797,7 @@ const App = () => {
     setLoadingStates(prev => ({ ...prev, genShots: true }));
     try {
       const typeList = SHOT_TYPES.join(', ');
-      const systemPrompt = `Expert comedy director and screenwriter. Generate JSON array of exactly 8 shots. Use these EXACT keys: "type" (MUST BE EXACTLY ONE OF: ${typeList}), "subject", "action", "notes", "dialogue", "shotCharacters" (array of strings). Focus heavily on standard screenplay language. Describe exactly what we SEE and HEAR. Include specific physical blocking, character emotion, and atmospheric details. Make it vivid and cinematic, using 2-4 sentences max per field.`;
+      const systemPrompt = `Expert comedy director and screenwriter. Generate JSON array of exactly 8 shots. Use these EXACT keys: "type" (MUST BE EXACTLY ONE OF: ${typeList}), "subject", "action", "notes", "dialogue", "shotCharacters" (array of strings). Focus heavily on standard screenplay language. Keep descriptions punchy and direct. Max 1-2 sentences per field. Dialogue should be a single line or short improv prompt. DO NOT write full script pages.`;
       const prompt = `PREMISE: ${activeSketch?.premise}\nTONE: ${activeSketch?.tone}\nSCENE: ${formattedSceneHeading}\nCHARACTERS AVAILABLE: ${richCharactersContext}\nHOOK: ${activeSketch?.hook}\nESCALATION: ${activeSketch?.escalation}\nENDING: ${activeSketch?.ending}`;
       const newShotsData = await callGemini(prompt, systemPrompt, true);
       if (newShotsData) {
@@ -804,7 +813,7 @@ const App = () => {
     setLoadingStates(prev => ({ ...prev, singleAIShot: true }));
     try {
       const typeList = SHOT_TYPES.join(', ');
-      const systemPrompt = `Expert comedy director and screenwriter. Generate exactly ONE new shot to continue the sequence. Return a SINGLE JSON OBJECT with these EXACT keys: "type" (MUST BE EXACTLY ONE OF: ${typeList}), "subject", "action", "notes", "dialogue", "shotCharacters" (array of strings). Focus on standard screenplay format. Describe what we SEE and HEAR clearly. Include character emotion and specific physical blocking. Make it vivid and cinematic, using 2-4 sentences max per field.`;
+      const systemPrompt = `Expert comedy director and screenwriter. Generate exactly ONE new shot to continue the sequence. Return a SINGLE JSON OBJECT with these EXACT keys: "type" (MUST BE EXACTLY ONE OF: ${typeList}), "subject", "action", "notes", "dialogue", "shotCharacters" (array of strings). Focus on standard screenplay format. Keep all text punchy, direct, and brief. Max 1-2 sentences per field. Dialogue should be a single line or short improv prompt. Do not over-write.`;
       const recentShots = activeShots.slice(-3).map(s => `Shot ${s.number}: [${s.type}] ${s.subject} - ${s.action}`).join('\n');
       const prompt = `PREMISE: ${activeSketch?.premise}\nTONE: ${activeSketch?.tone}\nSCENE: ${formattedSceneHeading}\nCHARACTERS: ${richCharactersContext}\nHOOK: ${activeSketch?.hook}\nRECENT SHOTS:\n${recentShots}\n\nCreate the NEXT logical shot to build the comedy.`;
       const newShotData = await callGemini(prompt, systemPrompt, true);
@@ -851,7 +860,7 @@ const App = () => {
       const charContext = shot.shotCharacters?.length > 0 ? shot.shotCharacters.map(n => activeProfiles.find(p => p.name === n)?.desc || n).join(', ') : richCharactersContext;
       const existing = shot[field] ? `CURRENT TEXT (DO NOT ERASE, ESCALATE THIS): "${shot[field]}"` : `CURRENT TEXT: [Empty]`;
       const prompt = `Scene: ${formattedSceneHeading}\nPremise: ${activeSketch?.premise}\n${contextPrompt}\nCharacters in shot: ${charContext}\nCamera Move: ${shot.cameraMove}\n${existing}`;
-      const newText = await callGemini(prompt, `${rolePrompt} Apply the 'Yes, And...' rule. If text exists, keep facts and expand on them. Write in a descriptive, vivid screenplay style. Aim for 2-4 solid sentences detailing the atmosphere, emotion, and specifics of what we see or hear.`, false);
+      const newText = await callGemini(prompt, `${rolePrompt} Apply the 'Yes, And...' rule. Keep facts if text exists. Be concise, punchy, and direct. Maximum 1 to 2 sentences. Do not over-write.`, false);
       if (newText) {
         setHistory(prev => ({ ...prev, [`shot-${shotId}-${field}`]: shot[field] || '' }));
         updateShot(shotId, field, newText.trim());
@@ -870,7 +879,7 @@ const App = () => {
   const generateNarrativeBeat = async (beatType) => {
     setLoadingStates(prev => ({ ...prev, [beatType]: true }));
     try {
-      const systemPrompt = `Brilliant comedy writer (${activeSketch?.tone || 'comedic'} humor). Provide a punchy, creative ${beatType} for the sketch. Write in descriptive screenplay outline format. Focus on what we SEE and HEAR. 2-4 sentences detailing the emotion and atmosphere.`;
+      const systemPrompt = `Brilliant comedy writer (${activeSketch?.tone || 'comedic'} humor). Provide a punchy, creative ${beatType} for the sketch. Write in descriptive screenplay outline format. Focus on what we SEE and HEAR. Keep it brief—max 2 sentences.`;
       const prompt = `Title: ${activeSketch?.title}\nScene Heading: ${formattedSceneHeading}\nCharacter Profiles: ${richCharactersContext}\nCurrent Premise: ${activeSketch?.premise}\nCurrent Hook: ${activeSketch?.hook}\nCurrent Escalation: ${activeSketch?.escalation}\nCurrent Ending: ${activeSketch?.ending}\nTask: Write/Improve the ${beatType.toUpperCase()}.`;
       const newBeat = await callGemini(prompt, systemPrompt, false);
       if (newBeat) {
@@ -893,7 +902,7 @@ const App = () => {
     const char = activeProfiles.find(c => c.id === charId);
     try {
       const existing = char.desc ? `CURRENT DETAILS (YES, AND... THESE): "${char.desc}"\n` : '';
-      const prompt = `Scene: ${formattedSceneHeading}\nPremise: ${activeSketch?.premise}\nSketch Hook: ${activeSketch?.hook}\nCharacter Name: ${char.name}\nCharacter Tropes: ${char.archetype}, ${char.age} years old, ${getGenderText(char.gender)}, ${getSkinText(char.melanin)}\n${existing}Task: Write a character introduction for a screenplay. Describe what we SEE (weird physical traits, wardrobe, posture) and their fatal flaw in 2-3 vivid sentences.`;
+      const prompt = `Scene: ${formattedSceneHeading}\nPremise: ${activeSketch?.premise}\nSketch Hook: ${activeSketch?.hook}\nCharacter Name: ${char.name}\nCharacter Tropes: ${char.archetype}, ${char.age} years old, ${getGenderText(char.gender)}, ${getSkinText(char.melanin)}\n${existing}Task: Write a character introduction for a screenplay. Describe what we SEE (weird physical traits, wardrobe, posture) and their fatal flaw. Max 1-2 vivid sentences.`;
       const newDesc = await callGemini(prompt, `Expert comedy writer (${activeSketch?.tone || 'comedic'} humor).`, false);
       if (newDesc) {
         setHistory(prev => ({ ...prev, [`char-${charId}-desc`]: char.desc || '' }));
@@ -1148,7 +1157,10 @@ const App = () => {
           {/* BYOK: Bring Your Own Key Section (Hides if AI is disabled) */}
           {aiEnabled && (
             <div className="p-4 border-b border-zinc-800/50 space-y-3 bg-zinc-900/30">
-              <div className="text-[9px] text-zinc-500 leading-tight">Paste your personal Gemini API key here to bypass shared rate limits.</div>
+              <div className="text-[9px] text-zinc-500 leading-tight">
+                Paste your personal Gemini API key here to bypass shared rate limits.
+                <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-purple-400 hover:text-purple-300 underline ml-1 font-bold">Get a free key here.</a>
+              </div>
               <input 
                 type="password" 
                 value={userApiKey}
@@ -1601,7 +1613,7 @@ const App = () => {
                                     <button onClick={() => revertShotField(shot.id, 'action')} className="p-1 hover:bg-zinc-800 rounded transition-colors text-zinc-500 hover:text-zinc-300" title="Undo AI edit"><Undo size={12}/></button>
                                   )}
                                   {aiEnabled && (
-                                    <button onClick={() => generateTextAssist(shot.id, 'action', 'Director blocking physical comedy. Write in screenplay format.', `Describe exactly what we SEE. Focus on specific physical action, props, and facial expressions. Make it vivid and cinematic.`)} disabled={!isRealUser || isAIBusy} className="p-1 hover:bg-orange-500/20 rounded disabled:opacity-50 shrink-0 text-orange-500">{loadingStates[`action-${shot.id}`] ? <Loader2 size={12} className="animate-spin" /> : (!isRealUser ? <Lock size={12} /> : <Clapperboard size={12} />)}</button>
+                                    <button onClick={() => generateTextAssist(shot.id, 'action', 'Director blocking physical comedy. Write in screenplay format.', `Describe exactly what we SEE. Focus on specific physical action, props, and facial expressions. Max 1-2 brief sentences.`)} disabled={!isRealUser || isAIBusy} className="p-1 hover:bg-orange-500/20 rounded disabled:opacity-50 shrink-0 text-orange-500">{loadingStates[`action-${shot.id}`] ? <Loader2 size={12} className="animate-spin" /> : (!isRealUser ? <Lock size={12} /> : <Clapperboard size={12} />)}</button>
                                   )}
                                 </div>
                                 Action / Blocking
@@ -1617,7 +1629,7 @@ const App = () => {
                                       <button onClick={() => revertShotField(shot.id, 'dialogue')} className="p-1 hover:bg-zinc-800 rounded transition-colors text-zinc-500 hover:text-zinc-300" title="Undo AI edit"><Undo size={12}/></button>
                                     )}
                                     {aiEnabled && (
-                                      <button onClick={() => generateTextAssist(shot.id, 'dialogue', 'Writer drafting dialogue.', `Write the dialogue and vocal delivery. Describe exactly what we HEAR. Include tone of voice, stutters, or overlapping speech if needed.`)} disabled={!isRealUser || isAIBusy} className="p-1 hover:bg-purple-500/20 rounded disabled:opacity-50 shrink-0 text-purple-500">{loadingStates[`dialogue-${shot.id}`] ? <Loader2 size={12} className="animate-spin" /> : (!isRealUser ? <Lock size={12} /> : <Quote size={12} />)}</button>
+                                      <button onClick={() => generateTextAssist(shot.id, 'dialogue', 'Writer drafting dialogue.', `Write a single punchy line of dialogue, or a brief improv prompt. Max 1-2 sentences. DO NOT write a full script format.`)} disabled={!isRealUser || isAIBusy} className="p-1 hover:bg-purple-500/20 rounded disabled:opacity-50 shrink-0 text-purple-500">{loadingStates[`dialogue-${shot.id}`] ? <Loader2 size={12} className="animate-spin" /> : (!isRealUser ? <Lock size={12} /> : <Quote size={12} />)}</button>
                                     )}
                                   </div>
                                   Dialogue / Improv
@@ -1631,7 +1643,7 @@ const App = () => {
                                       <button onClick={() => revertShotField(shot.id, 'notes')} className="p-1 hover:bg-zinc-800 rounded transition-colors text-zinc-500 hover:text-zinc-300" title="Undo AI edit"><Undo size={12}/></button>
                                     )}
                                     {aiEnabled && (
-                                      <button onClick={() => generateTextAssist(shot.id, 'notes', 'DP advising on camera/light.', `Focus on lighting, lens choice, camera movement, and the emotional feeling the shot should evoke.`)} disabled={!isRealUser || isAIBusy} className="p-1 hover:bg-blue-500/20 rounded disabled:opacity-50 shrink-0 text-blue-500">{loadingStates[`notes-${shot.id}`] ? <Loader2 size={12} className="animate-spin" /> : (!isRealUser ? <Lock size={12} /> : <Wand2 size={12} />)}</button>
+                                      <button onClick={() => generateTextAssist(shot.id, 'notes', 'DP advising on camera/light.', `Focus on lighting, lens choice, and camera movement. Max 1-2 brief sentences.`)} disabled={!isRealUser || isAIBusy} className="p-1 hover:bg-blue-500/20 rounded disabled:opacity-50 shrink-0 text-blue-500">{loadingStates[`notes-${shot.id}`] ? <Loader2 size={12} className="animate-spin" /> : (!isRealUser ? <Lock size={12} /> : <Wand2 size={12} />)}</button>
                                     )}
                                   </div>
                                   Director Notes
