@@ -88,8 +88,8 @@ const App = () => {
     premise: 'A director discovers a digital production rig that does the heavy lifting of pre-production, allowing them to visualize their absurd ideas instantly.',
     settingType: 'INT.', location: 'THE EDIT BAY', timeOfDay: 'NIGHT', tone: 'Cinematic', imageStyle: 'Pencil Sketch', aspectRatio: '16:9',
     characterProfiles: [
-      { id: 'c1', name: 'The Director', age: 35, gender: 50, melanin: 50, archetype: 'The Neurotic', desc: 'Staring at a blank screen.', image: null },
-      { id: 'c2', name: 'The AI', age: 1, gender: 50, melanin: 50, archetype: 'The Wildcard', desc: 'A chaotic but helpful partner.', image: null },
+      { id: 'c1', name: 'The Director', sex: 'Female', age: 35, gender: 50, melanin: 50, archetype: 'The Neurotic', desc: 'Staring at a blank screen.', image: null },
+      { id: 'c2', name: 'The AI', sex: 'Male', age: 1, gender: 50, melanin: 50, archetype: 'The Wildcard', desc: 'A chaotic but helpful partner.', image: null },
     ], props: 'Coffee cup, Mechanical keyboard', hook: 'The Director is staring at a blank page.', escalation: 'They open SketchBeans.', ending: 'They get some sleep.', script: ''
   }]);
   const [shots, setShots] = useState([
@@ -118,6 +118,7 @@ const App = () => {
 
   const [isSyncing, setIsSyncing] = useState(false);
   const isInitialLoad = useRef({ sketches: true, shots: true, pubSketches: true, pubShots: true });
+  const [hasLoadedCloudData, setHasLoadedCloudData] = useState(false);
   const autosaveTimeout = useRef(null);
   const [boardCols, setBoardCols] = useState(2);
   const apiKey = globalGeminiKey; 
@@ -138,6 +139,7 @@ const App = () => {
   const richCharactersContext = activeProfiles.map(c => {
     let details = [];
     if (c.age) details.push(`${c.age}yo`);
+    if (c.sex) details.push(c.sex);
     if (c.archetype) details.push(c.archetype);
     if (c.gender !== undefined) details.push(getGenderText(c.gender));
     if (c.melanin !== undefined) details.push(getSkinText(c.melanin));
@@ -182,6 +184,7 @@ const App = () => {
       if (isInitialLoad.current.sketches) {
         if (!snap.empty) setSketches(snap.docs.map(d => ({id: d.id, ...d.data()})));
         isInitialLoad.current.sketches = false;
+        setHasLoadedCloudData(true);
       }
     });
     const unsubShots = onSnapshot(collection(db, 'artifacts', appId, 'users', user.uid, 'shots'), (snap) => {
@@ -267,7 +270,7 @@ const App = () => {
     }), false);
   };
 
-  const addCharacter = () => updateSketch(activeSketchId, 'characterProfiles', [...activeProfiles, { id: Date.now().toString(), name: 'New Character', age: 30, gender: 50, melanin: 50, archetype: 'The Wildcard', desc: '', image: null }]);
+  const addCharacter = () => updateSketch(activeSketchId, 'characterProfiles', [...activeProfiles, { id: Date.now().toString(), name: 'New Character', sex: 'Male', age: 30, gender: 50, melanin: 50, archetype: 'The Wildcard', desc: '', image: null }]);
   const updateChar = (charId, field, value) => updateSketch(activeSketchId, 'characterProfiles', activeProfiles.map(p => p.id === charId ? { ...p, [field]: value } : p));
   const removeChar = (charId) => updateSketch(activeSketchId, 'characterProfiles', activeProfiles.filter(p => p.id !== charId));
 
@@ -345,42 +348,41 @@ const App = () => {
   // --- SYNC & COLLAB LOGIC ---
   const pushToCloud = async (silent = false) => {
     if (!user || !isRealUser) return;
-    
-    let safetyTimer;
-    if (!silent) {
-      setIsSyncing(true);
-      // Hard timeout safety net to guarantee spinner releases even if Firebase hangs
-      safetyTimer = setTimeout(() => setIsSyncing(false), 3000); 
-    }
-    
+    if (!silent) setIsSyncing(true);
+
     try {
-      if (isWritersRoom) {
-        const s = publicSketches.find(s => s.id === activeSketchId);
-        if (s) await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'shared_sketches', s.id), { ...s, lastEditedBy: user.email || user.displayName }, { merge: true });
-        
-        const shotPromises = publicShots
-          .filter(sh => sh.sketchId === activeSketchId)
-          .map(shot => setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'shared_shots', shot.id), { ...shot, lastEditedBy: user.email || user.displayName }, { merge: true }));
-        await Promise.all(shotPromises);
-      } else {
-        const sketchPromises = sketches.map(s => setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'sketches', s.id), s, { merge: true }));
-        const shotPromises = shots.map(s => setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'shots', s.id), s, { merge: true }));
-        await Promise.all([...sketchPromises, ...shotPromises]);
-      }
+      // 8-second hard timeout for the spinner, in case Firebase queues silently
+      const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Firebase network timeout. Save aborted.")), 8000));
+      
+      const saveTask = async () => {
+        if (isWritersRoom) {
+          const s = publicSketches.find(s => s.id === activeSketchId);
+          if (s) await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'shared_sketches', s.id), { ...s, lastEditedBy: user.email || user.displayName }, { merge: true });
+          
+          const shotPromises = publicShots
+            .filter(sh => sh.sketchId === activeSketchId)
+            .map(shot => setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'shared_shots', shot.id), { ...shot, lastEditedBy: user.email || user.displayName }, { merge: true }));
+          await Promise.all(shotPromises);
+        } else {
+          const sketchPromises = sketches.map(s => setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'sketches', s.id), s, { merge: true }));
+          const shotPromises = shots.map(s => setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'shots', s.id), s, { merge: true }));
+          await Promise.all([...sketchPromises, ...shotPromises]);
+        }
+      };
+
+      await Promise.race([saveTask(), timeoutPromise]);
+      
     } catch (err) { 
       if (!silent) alert(`Sync Failed: ${err.message}`);
       console.error("Sync error:", err);
     } finally {
-      if (!silent) {
-        clearTimeout(safetyTimer);
-        setIsSyncing(false);
-      }
+      if (!silent) setIsSyncing(false);
     }
   };
 
   // --- AUTOSAVE ENGINE ---
   useEffect(() => {
-    if (!isRealUser || !authResolved || isInitialLoad.current.sketches) return;
+    if (!isRealUser || !authResolved || !hasLoadedCloudData) return;
     
     if (autosaveTimeout.current) clearTimeout(autosaveTimeout.current);
     autosaveTimeout.current = setTimeout(() => {
@@ -388,7 +390,7 @@ const App = () => {
     }, 5000);
     
     return () => clearTimeout(autosaveTimeout.current);
-  }, [sketches, shots, publicSketches, publicShots, activeSketchId, isRealUser, authResolved]);
+  }, [sketches, shots, publicSketches, publicShots, activeSketchId, isRealUser, authResolved, hasLoadedCloudData]);
 
 
   const openWritersRoom = async () => {
@@ -509,7 +511,7 @@ const App = () => {
 
   // --- EXPORT & DOWNLOAD LOGIC ---
   const exportSnapshot = () => {
-    const data = { version: "4.4", timestamp: new Date().toISOString(), sketches, shots, publicSketches, publicShots };
+    const data = { version: "4.5", timestamp: new Date().toISOString(), sketches, shots, publicSketches, publicShots };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a'); link.href = url; link.download = `SketchBeans_FullBackup_${new Date().getTime()}.json`;
@@ -522,7 +524,7 @@ const App = () => {
     
     if (!targetSketch) return;
 
-    const data = { version: "4.4", timestamp: new Date().toISOString(), sketches: [targetSketch], shots: targetShots };
+    const data = { version: "4.5", timestamp: new Date().toISOString(), sketches: [targetSketch], shots: targetShots };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a'); link.href = url; 
@@ -651,7 +653,7 @@ const App = () => {
       ? shot.shotCharacters.map(n => {
           const profile = activeProfiles.find(p => p.name === n);
           if (!profile) return n;
-          return `${n} (${profile.age}yo, ${getGenderText(profile.gender || 50)}, ${getSkinText(profile.melanin || 50)}. ${profile.desc || ''})`;
+          return `${n} (${profile.age}yo ${profile.sex || 'Person'}, ${getGenderText(profile.gender || 50)}, ${getSkinText(profile.melanin || 50)}. ${profile.desc || ''})`;
         }).join(', ') 
       : richCharactersContext;
 
@@ -733,7 +735,7 @@ const App = () => {
     
     setLoadingStates(prev => ({ ...prev, [`charImg-${charId}`]: true }));
     const char = activeProfiles.find(c => c.id === charId);
-    const promptText = `A close-up cinematic headshot photograph of a ${char.age} year old ${getGenderText(char.gender)} with ${getSkinText(char.melanin)}. Vibe/Archetype: ${char.archetype}. Details: ${char.desc}. Plain neutral background. Highly detailed, photorealistic.`;
+    const promptText = `A close-up cinematic headshot photograph of a ${char.age} year old ${char.sex || 'person'} with ${getSkinText(char.melanin)} who is ${getGenderText(char.gender)}. Vibe/Archetype: ${char.archetype}. Details: ${char.desc}. Plain neutral background. Highly detailed, photorealistic.`;
 
     const maxRetries = 6; let delay = 3000;
     try {
@@ -778,14 +780,14 @@ const App = () => {
   const extractCharacters = async () => {
     setLoadingStates(prev => ({ ...prev, extractChars: true }));
     try {
-      const systemPrompt = `Analyze the scene premise, hook, escalation, and ending. Identify distinct characters mentioned. Return a JSON array of objects with keys: "name" (string), "age" (number 1-100), "gender" (number 0-100, 0=femme, 100=masc), "melanin" (number 0-100, 0=light, 100=dark), "archetype" (choose best match from: ${COMEDY_ARCHETYPES.join(', ')}), "desc" (1 short punchy sentence). Do not invent characters not implied by the text.`;
+      const systemPrompt = `Analyze the scene premise, hook, escalation, and ending. Identify distinct characters mentioned. Return a JSON array of objects with keys: "name" (string), "sex" (Male, Female, or Intersex), "age" (number 1-100), "gender" (number 0-100, 0=femme, 100=masc), "melanin" (number 0-100, 0=light, 100=dark), "archetype" (choose best match from: ${COMEDY_ARCHETYPES.join(', ')}), "desc" (1 short punchy sentence). Do not invent characters not implied by the text.`;
       const prompt = `Premise: ${activeSketch.premise}\nHook: ${activeSketch.hook}\nEscalation: ${activeSketch.escalation}\nEnding: ${activeSketch.ending}`;
       const extracted = await callGemini(prompt, systemPrompt, true);
       
       if (extracted && Array.isArray(extracted) && extracted.length > 0) {
          const newProfiles = extracted.map(c => ({
            id: Date.now().toString() + Math.random().toString(36).substring(7),
-           name: c.name || 'Unknown', age: c.age || 30, gender: c.gender || 50, melanin: c.melanin || 50,
+           name: c.name || 'Unknown', sex: c.sex || 'Male', age: c.age || 30, gender: c.gender || 50, melanin: c.melanin || 50,
            archetype: COMEDY_ARCHETYPES.includes(c.archetype) ? c.archetype : 'The Wildcard', desc: c.desc || '', image: null
          }));
          updateSketch(activeSketchId, 'characterProfiles', [...activeProfiles, ...newProfiles]);
@@ -797,7 +799,7 @@ const App = () => {
     setLoadingStates(prev => ({ ...prev, genShots: true }));
     try {
       const typeList = SHOT_TYPES.join(', ');
-      const systemPrompt = `Expert comedy director and screenwriter. Generate JSON array of exactly 8 shots. Use these EXACT keys: "type" (MUST BE EXACTLY ONE OF: ${typeList}), "subject", "action", "notes", "dialogue", "shotCharacters" (array of strings). Focus heavily on standard screenplay language. Keep descriptions punchy and direct. Max 1-2 sentences per field. Dialogue should be a single line or short improv prompt. DO NOT write full script pages.`;
+      const systemPrompt = `Expert comedy director. Generate JSON array of exactly 8 shots. Use these EXACT keys: "type" (MUST BE EXACTLY ONE OF: ${typeList}), "subject", "action", "notes", "dialogue", "shotCharacters" (array of strings). CRITICAL: Treat every character as a distinctly separate individual. Do not merge their actions or dialogue. Keep descriptions punchy and direct. Max 1-2 sentences per field. Dialogue should be a single line or short improv prompt. DO NOT write full script pages.`;
       const prompt = `PREMISE: ${activeSketch?.premise}\nTONE: ${activeSketch?.tone}\nSCENE: ${formattedSceneHeading}\nCHARACTERS AVAILABLE: ${richCharactersContext}\nHOOK: ${activeSketch?.hook}\nESCALATION: ${activeSketch?.escalation}\nENDING: ${activeSketch?.ending}`;
       const newShotsData = await callGemini(prompt, systemPrompt, true);
       if (newShotsData) {
@@ -813,7 +815,7 @@ const App = () => {
     setLoadingStates(prev => ({ ...prev, singleAIShot: true }));
     try {
       const typeList = SHOT_TYPES.join(', ');
-      const systemPrompt = `Expert comedy director and screenwriter. Generate exactly ONE new shot to continue the sequence. Return a SINGLE JSON OBJECT with these EXACT keys: "type" (MUST BE EXACTLY ONE OF: ${typeList}), "subject", "action", "notes", "dialogue", "shotCharacters" (array of strings). Focus on standard screenplay format. Keep all text punchy, direct, and brief. Max 1-2 sentences per field. Dialogue should be a single line or short improv prompt. Do not over-write.`;
+      const systemPrompt = `Expert comedy director. Generate exactly ONE new shot to continue the sequence. Return a SINGLE JSON OBJECT with these EXACT keys: "type" (MUST BE EXACTLY ONE OF: ${typeList}), "subject", "action", "notes", "dialogue", "shotCharacters" (array of strings). CRITICAL: Treat every character as a distinctly separate individual. Do not merge their actions or dialogue. Keep all text punchy, direct, and brief. Max 1-2 sentences per field. Dialogue should be a single line or short improv prompt. Do not over-write.`;
       const recentShots = activeShots.slice(-3).map(s => `Shot ${s.number}: [${s.type}] ${s.subject} - ${s.action}`).join('\n');
       const prompt = `PREMISE: ${activeSketch?.premise}\nTONE: ${activeSketch?.tone}\nSCENE: ${formattedSceneHeading}\nCHARACTERS: ${richCharactersContext}\nHOOK: ${activeSketch?.hook}\nRECENT SHOTS:\n${recentShots}\n\nCreate the NEXT logical shot to build the comedy.`;
       const newShotData = await callGemini(prompt, systemPrompt, true);
@@ -860,7 +862,7 @@ const App = () => {
       const charContext = shot.shotCharacters?.length > 0 ? shot.shotCharacters.map(n => activeProfiles.find(p => p.name === n)?.desc || n).join(', ') : richCharactersContext;
       const existing = shot[field] ? `CURRENT TEXT (DO NOT ERASE, ESCALATE THIS): "${shot[field]}"` : `CURRENT TEXT: [Empty]`;
       const prompt = `Scene: ${formattedSceneHeading}\nPremise: ${activeSketch?.premise}\n${contextPrompt}\nCharacters in shot: ${charContext}\nCamera Move: ${shot.cameraMove}\n${existing}`;
-      const newText = await callGemini(prompt, `${rolePrompt} Apply the 'Yes, And...' rule. Keep facts if text exists. Be concise, punchy, and direct. Maximum 1 to 2 sentences. Do not over-write.`, false);
+      const newText = await callGemini(prompt, `${rolePrompt} Apply the 'Yes, And...' rule. CRITICAL: Treat every character as a distinctly separate individual. Do not merge their actions or dialogue. Keep facts if text exists. Be concise, punchy, and direct. Maximum 1 to 2 sentences. Do not over-write.`, false);
       if (newText) {
         setHistory(prev => ({ ...prev, [`shot-${shotId}-${field}`]: shot[field] || '' }));
         updateShot(shotId, field, newText.trim());
@@ -902,7 +904,7 @@ const App = () => {
     const char = activeProfiles.find(c => c.id === charId);
     try {
       const existing = char.desc ? `CURRENT DETAILS (YES, AND... THESE): "${char.desc}"\n` : '';
-      const prompt = `Scene: ${formattedSceneHeading}\nPremise: ${activeSketch?.premise}\nSketch Hook: ${activeSketch?.hook}\nCharacter Name: ${char.name}\nCharacter Tropes: ${char.archetype}, ${char.age} years old, ${getGenderText(char.gender)}, ${getSkinText(char.melanin)}\n${existing}Task: Write a character introduction for a screenplay. Describe what we SEE (weird physical traits, wardrobe, posture) and their fatal flaw. Max 1-2 vivid sentences.`;
+      const prompt = `Scene: ${formattedSceneHeading}\nPremise: ${activeSketch?.premise}\nSketch Hook: ${activeSketch?.hook}\nCharacter Name: ${char.name}\nCharacter Tropes: ${char.archetype}, ${char.age} years old, ${char.sex || 'Person'}, ${getGenderText(char.gender)}, ${getSkinText(char.melanin)}\n${existing}Task: Write a character introduction for a screenplay. Describe what we SEE (weird physical traits, wardrobe, posture) and their fatal flaw. Max 1-2 vivid sentences.`;
       const newDesc = await callGemini(prompt, `Expert comedy writer (${activeSketch?.tone || 'comedic'} humor).`, false);
       if (newDesc) {
         setHistory(prev => ({ ...prev, [`char-${charId}-desc`]: char.desc || '' }));
@@ -1427,7 +1429,17 @@ const App = () => {
                         </div>
                         <div className="space-y-2">
                           <div className="flex justify-between text-[9px] text-zinc-500 font-black uppercase tracking-widest">
-                            <span>Fem</span><span>Masc</span>
+                            <span>Sex (Biology)</span>
+                          </div>
+                          <select value={char.sex || 'Male'} onChange={(e) => updateChar(char.id, 'sex', e.target.value)} className="w-full bg-zinc-950 text-zinc-300 text-[10px] font-black px-3 py-1 rounded-lg border border-zinc-800 focus:outline-none cursor-pointer appearance-none uppercase tracking-widest">
+                            <option value="Male">Male</option>
+                            <option value="Female">Female</option>
+                            <option value="Intersex">Intersex</option>
+                          </select>
+                        </div>
+                        <div className="space-y-2 col-span-2">
+                          <div className="flex justify-between text-[9px] text-zinc-500 font-black uppercase tracking-widest">
+                            <span>Fem Presentation</span><span>Masc Presentation</span>
                           </div>
                           <input type="range" min="0" max="100" value={char.gender !== undefined ? char.gender : 50} onChange={(e) => updateChar(char.id, 'gender', e.target.value)} className="w-full h-1.5 bg-gradient-to-r from-pink-500/50 via-zinc-800 to-blue-500/50 rounded-lg appearance-none cursor-pointer accent-zinc-300" />
                         </div>
@@ -1613,7 +1625,7 @@ const App = () => {
                                     <button onClick={() => revertShotField(shot.id, 'action')} className="p-1 hover:bg-zinc-800 rounded transition-colors text-zinc-500 hover:text-zinc-300" title="Undo AI edit"><Undo size={12}/></button>
                                   )}
                                   {aiEnabled && (
-                                    <button onClick={() => generateTextAssist(shot.id, 'action', 'Director blocking physical comedy. Write in screenplay format.', `Describe exactly what we SEE. Focus on specific physical action, props, and facial expressions. Max 1-2 brief sentences.`)} disabled={!isRealUser || isAIBusy} className="p-1 hover:bg-orange-500/20 rounded disabled:opacity-50 shrink-0 text-orange-500">{loadingStates[`action-${shot.id}`] ? <Loader2 size={12} className="animate-spin" /> : (!isRealUser ? <Lock size={12} /> : <Clapperboard size={12} />)}</button>
+                                    <button onClick={() => generateTextAssist(shot.id, 'action', 'Director blocking physical comedy.', `CRITICAL: Treat every character as a distinct individual. Do not merge their actions. Describe exactly what we SEE. Focus on specific physical action, props, and facial expressions. Keep it brief. Max 1-2 punchy sentences.`)} disabled={!isRealUser || isAIBusy} className="p-1 hover:bg-orange-500/20 rounded disabled:opacity-50 shrink-0 text-orange-500">{loadingStates[`action-${shot.id}`] ? <Loader2 size={12} className="animate-spin" /> : (!isRealUser ? <Lock size={12} /> : <Clapperboard size={12} />)}</button>
                                   )}
                                 </div>
                                 Action / Blocking
@@ -1629,7 +1641,7 @@ const App = () => {
                                       <button onClick={() => revertShotField(shot.id, 'dialogue')} className="p-1 hover:bg-zinc-800 rounded transition-colors text-zinc-500 hover:text-zinc-300" title="Undo AI edit"><Undo size={12}/></button>
                                     )}
                                     {aiEnabled && (
-                                      <button onClick={() => generateTextAssist(shot.id, 'dialogue', 'Writer drafting dialogue.', `Write a single punchy line of dialogue, or a brief improv prompt. Max 1-2 sentences. DO NOT write a full script format.`)} disabled={!isRealUser || isAIBusy} className="p-1 hover:bg-purple-500/20 rounded disabled:opacity-50 shrink-0 text-purple-500">{loadingStates[`dialogue-${shot.id}`] ? <Loader2 size={12} className="animate-spin" /> : (!isRealUser ? <Lock size={12} /> : <Quote size={12} />)}</button>
+                                      <button onClick={() => generateTextAssist(shot.id, 'dialogue', 'Writer drafting dialogue.', `CRITICAL: Treat every character as a distinct individual. Write a single punchy line of dialogue, or a brief improv prompt. Max 1-2 sentences. DO NOT write a full script format.`)} disabled={!isRealUser || isAIBusy} className="p-1 hover:bg-purple-500/20 rounded disabled:opacity-50 shrink-0 text-purple-500">{loadingStates[`dialogue-${shot.id}`] ? <Loader2 size={12} className="animate-spin" /> : (!isRealUser ? <Lock size={12} /> : <Quote size={12} />)}</button>
                                     )}
                                   </div>
                                   Dialogue / Improv
