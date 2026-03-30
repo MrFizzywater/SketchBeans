@@ -13,7 +13,7 @@ import {
 import { initializeApp } from 'firebase/app';
 import { 
   getAuth, signInWithCustomToken, signInWithPopup, signInAnonymously,
-  GoogleAuthProvider, GithubAuthProvider, onAuthStateChanged, signOut 
+  GoogleAuthProvider, onAuthStateChanged, signOut 
 } from 'firebase/auth';
 import { 
   getFirestore, collection, doc, setDoc, onSnapshot, deleteDoc 
@@ -193,14 +193,14 @@ const App = () => {
   }, [isRealUser, user]);
 
   // --- HARDENED LOGIN LOGIC ---
-  const loginWithProvider = async (providerName) => {
+  const loginWithProvider = async () => {
     // 1. Trap missing environment variables before we even try to call Firebase
     if (!firebaseConfig || !firebaseConfig.apiKey || firebaseConfig.apiKey.includes('your_key_here')) {
       alert("🚨 FATAL RIG ERROR: Your Firebase API Key is missing! \n\nVite failed to inject the VITE_FIREBASE_API_KEY environment variable during the build. Go to Coolify, double check the spelling of your variables, and click 'Deploy' to force a fresh build.");
       return;
     }
 
-    const provider = providerName === 'google' ? new GoogleAuthProvider() : new GithubAuthProvider();
+    const provider = new GoogleAuthProvider();
     
     try { 
       await signInWithPopup(auth, provider); 
@@ -980,8 +980,7 @@ const App = () => {
             </div>
             
             <div className="space-y-3 relative z-10">
-              <button onClick={() => loginWithProvider('google')} className="w-full flex justify-center items-center gap-3 px-4 py-4 text-xs font-black bg-zinc-100 hover:bg-white text-zinc-900 rounded-2xl transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5">CONTINUE WITH GOOGLE</button>
-              <button onClick={() => loginWithProvider('github')} className="w-full flex justify-center items-center gap-3 px-4 py-4 text-xs font-black bg-zinc-800 hover:bg-zinc-700 text-white rounded-2xl transition-all border border-zinc-700 shadow-lg hover:shadow-xl hover:-translate-y-0.5"><GitBranch size={16} /> CONTINUE WITH GITHUB</button>
+              <button onClick={() => loginWithProvider()} className="w-full flex justify-center items-center gap-3 px-4 py-4 text-xs font-black bg-zinc-100 hover:bg-white text-zinc-900 rounded-2xl transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5">CONTINUE WITH GOOGLE</button>
               <button onClick={() => setIsGuest(true)} className="w-full flex justify-center items-center gap-3 px-4 py-3 text-[10px] font-black bg-transparent hover:bg-zinc-800/50 text-zinc-500 hover:text-zinc-300 rounded-2xl transition-all mt-4 uppercase tracking-widest border border-dashed border-transparent hover:border-zinc-700">Explore as Guest</button>
             </div>
           </div>
