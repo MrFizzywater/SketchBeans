@@ -16,7 +16,7 @@ import {
   GoogleAuthProvider, onAuthStateChanged, signOut 
 } from 'firebase/auth';
 import { 
-  getFirestore, collection, doc, setDoc, onSnapshot, deleteDoc 
+  getFirestore, collection, doc, setDoc, onSnapshot, deleteDoc, writeBatch
 } from 'firebase/firestore';
 
 // --- ENVIRONMENT INITIALIZATION & SAFE KEY EXTRACTION ---
@@ -365,18 +365,23 @@ const App = () => {
       const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Firebase network timeout. Save aborted.")), 8000));
       
       const saveTask = async () => {
+        // CRITICAL FIX: Only push the active sketch and its shots.
+        // Saving the entire library on every keystroke exhausts Firebase free tier quotas (20k/day)
+        // and causes the "Write stream exhausted maximum allowed queued writes" crash.
         if (isWritersRoom) {
-          const s = publicSketches.find(s => s.id === activeSketchId);
+          const s = publicSketches.find(sk => sk.id === activeSketchId);
           if (s) await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'shared_sketches', s.id), { ...s, lastEditedBy: user.email || user.displayName }, { merge: true });
           
-          const shotPromises = publicShots
-            .filter(sh => sh.sketchId === activeSketchId)
-            .map(shot => setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'shared_shots', shot.id), { ...shot, lastEditedBy: user.email || user.displayName }, { merge: true }));
+          const activePubShots = publicShots.filter(sh => sh.sketchId === activeSketchId);
+          const shotPromises = activePubShots.map(shot => setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'shared_shots', shot.id), { ...shot, lastEditedBy: user.email || user.displayName }, { merge: true }));
           await Promise.all(shotPromises);
         } else {
-          const sketchPromises = sketches.map(s => setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'sketches', s.id), s, { merge: true }));
-          const shotPromises = shots.map(s => setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'shots', s.id), s, { merge: true }));
-          await Promise.all([...sketchPromises, ...shotPromises]);
+          const s = sketches.find(sk => sk.id === activeSketchId);
+          if (s) await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'sketches', s.id), s, { merge: true });
+          
+          const activePrivShots = shots.filter(sh => sh.sketchId === activeSketchId);
+          const shotPromises = activePrivShots.map(shot => setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'shots', shot.id), shot, { merge: true }));
+          await Promise.all(shotPromises);
         }
       };
 
@@ -552,7 +557,7 @@ const App = () => {
     const file = event.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       try {
         const content = JSON.parse(e.target?.result);
         if (content.sketches && content.shots) {
@@ -569,6 +574,30 @@ const App = () => {
           setShots(prev => [...prev, ...newShots]);
           
           if (newSketches.length > 0) setActiveSketchId(newSketches[0].id);
+
+          // BATCH UPLOAD IMPORTED FILES
+          if (user && isRealUser) {
+            setIsSyncing(true);
+            try {
+              let batch = writeBatch(db);
+              let count = 0;
+              const commitBatch = async () => { if (count > 0) { await batch.commit(); batch = writeBatch(db); count = 0; } };
+
+              for (const s of newSketches) {
+                batch.set(doc(db, 'artifacts', appId, 'users', user.uid, 'sketches', s.id), s, { merge: true });
+                count++; if (count >= 400) await commitBatch();
+              }
+              for (const s of newShots) {
+                batch.set(doc(db, 'artifacts', appId, 'users', user.uid, 'shots', s.id), s, { merge: true });
+                count++; if (count >= 400) await commitBatch();
+              }
+              await commitBatch();
+            } catch(err) {
+              console.error("Import sync error:", err);
+            } finally {
+              setIsSyncing(false);
+            }
+          }
         }
       } catch (err) { 
         alert("Failed to import. The file might be corrupted."); 
