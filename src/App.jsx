@@ -120,6 +120,7 @@ const App = () => {
   const isInitialLoad = useRef({ sketches: true, shots: true, pubSketches: true, pubShots: true });
   const [hasLoadedCloudData, setHasLoadedCloudData] = useState(false);
   const autosaveTimeout = useRef(null);
+  const isDirty = useRef(false); // <--- THE FIX: Tripwire for human edits
   const [boardCols, setBoardCols] = useState(2);
   const apiKey = globalGeminiKey; 
 
@@ -253,6 +254,7 @@ const App = () => {
 
   // --- STATE MUTATION HELPERS ---
   const updateContextState = (stateUpdater, isSketch) => {
+    isDirty.current = true; // Mark as human-edited
     if (isWritersRoom) {
       if (isSketch) setPublicSketches(stateUpdater); else setPublicShots(stateUpdater);
     } else {
@@ -394,7 +396,11 @@ const App = () => {
     
     if (autosaveTimeout.current) clearTimeout(autosaveTimeout.current);
     autosaveTimeout.current = setTimeout(() => {
-      pushToCloud(true); // Silent autosave in background
+      // Only push to cloud if a human actually made an edit
+      if (isDirty.current) {
+        pushToCloud(true); 
+        isDirty.current = false; // Reset the tripwire
+      }
     }, 5000);
     
     return () => clearTimeout(autosaveTimeout.current);
