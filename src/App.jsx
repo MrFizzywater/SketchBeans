@@ -6,7 +6,7 @@ import {
   X, Download, Upload, Save, Maximize2, Map, 
   ChevronUp, ChevronDown, Clock, ListVideo, Mic,
   UserPlus, ArrowUp, ArrowDown, Cloud, GitBranch, LogOut, Lock, Copy, Menu,
-  ScrollText, VenetianMask, Clapperboard, Key, EyeOff, User, Settings2, Users, Settings, Video, RefreshCcw, ArrowDownToLine, ArrowUpFromLine, Undo, Scissors, CheckCircle2, Film
+  ScrollText, VenetianMask, Clapperboard, Key, EyeOff, User, Settings2, Users, Settings, Video, RefreshCcw, Undo, Scissors, CheckCircle2, Film
 } from 'lucide-react';
 
 // --- FIREBASE IMPORTS ---
@@ -19,9 +19,8 @@ import {
   getFirestore, collection, doc, setDoc, onSnapshot, deleteDoc, writeBatch
 } from 'firebase/firestore';
 
-// --- ENVIRONMENT INITIALIZATION & SAFE KEY EXTRACTION ---
+// --- ENVIRONMENT INITIALIZATION ---
 let firebaseConfig = {};
-let globalGeminiKey = "";
 let globalTextModel = "gemini-2.5-flash"; 
 let globalImageModel = "imagen-4.0-generate-001"; 
 
@@ -37,7 +36,6 @@ if (typeof __firebase_config !== 'undefined') {
       messagingSenderId: import.meta.env.VITE_FIREBASE_SENDER_ID,
       appId: import.meta.env.VITE_FIREBASE_APP_ID
     };
-    globalGeminiKey = import.meta.env.VITE_GEMINI_API_KEY || "";
     if (import.meta.env.VITE_GEMINI_TEXT_MODEL) globalTextModel = import.meta.env.VITE_GEMINI_TEXT_MODEL;
     if (import.meta.env.VITE_GEMINI_IMAGE_MODEL) globalImageModel = import.meta.env.VITE_GEMINI_IMAGE_MODEL;
   } catch (e) { /* Ignore in strict environments */ }
@@ -130,7 +128,6 @@ const App = () => {
   const autosaveTimeout = useRef(null);
   const isDirty = useRef(false); 
   const [boardCols, setBoardCols] = useState(2);
-  const apiKey = globalGeminiKey; 
 
   // --- DERIVED CONTEXT LOGIC ---
   const activeSketch = sketches.find(s => s.id === activeSketchId) || sketches[0];
@@ -312,13 +309,11 @@ const App = () => {
         let changed = false;
         let newShot = { ...shot };
 
-        // Update tags
         if (newShot.shotCharacters?.includes(oldName)) {
           newShot.shotCharacters = newShot.shotCharacters.map(c => c === oldName ? newName : c);
           changed = true;
         }
 
-        // Regex replace in text fields (whole words only to prevent accidental partial matches)
         const regex = new RegExp(`\\b${oldName}\\b`, 'g');
         ['action', 'dialogue', 'notes', 'subject'].forEach(key => {
           if (newShot[key] && typeof newShot[key] === 'string' && newShot[key].match(regex)) {
@@ -515,7 +510,7 @@ const App = () => {
   };
 
   const exportSnapshot = () => {
-    const data = { version: "6.4", timestamp: new Date().toISOString(), sketches, shots };
+    const data = { version: "7.0", timestamp: new Date().toISOString(), sketches, shots };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a'); link.href = url; link.download = `SketchBeans_FullBackup_${new Date().getTime()}.json`;
@@ -526,7 +521,7 @@ const App = () => {
     const targetSketch = sketches.find(s => s.id === sketchId);
     const targetShots = shots.filter(s => s.sketchId === sketchId);
     if (!targetSketch) return;
-    const data = { version: "6.4", timestamp: new Date().toISOString(), sketches: [targetSketch], shots: targetShots };
+    const data = { version: "7.0", timestamp: new Date().toISOString(), sketches: [targetSketch], shots: targetShots };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a'); link.href = url; 
@@ -630,10 +625,10 @@ const App = () => {
 
   // --- AI ENGINE (API LOGIC) ---
   const callGemini = async (prompt, systemPrompt = "", isJson = false) => {
-    const activeKey = (userApiKey || apiKey).trim();
+    const activeKey = userApiKey.trim();
     if (!activeKey) {
-      alert("API Key missing! Please enter your own Gemini API key in the sidebar Settings panel.");
-      throw new Error("API Key is missing.");
+      alert("API Key missing! Please enter your personal Gemini API key in the sidebar Settings panel.");
+      return null;
     }
     
     setIsAIBusy(true); 
@@ -705,7 +700,7 @@ const App = () => {
 
   const generateImage = async (shotId) => {
     const activeKey = userApiKey.trim();
-    if (!activeKey) return alert("You need to enter your own personal Gemini API Key in the sidebar Settings to generate images.");
+    if (!activeKey) return alert("API Key missing! Please enter your personal Gemini API key in the sidebar Settings panel.");
     
     setLoadingStates(prev => ({ ...prev, [`image-${shotId}`]: true }));
     const shot = activeShots.find(s => s.id === shotId);
@@ -773,6 +768,54 @@ const App = () => {
         }
       }
     } finally { setLoadingStates(prev => ({ ...prev, [`image-${shotId}`]: false })); }
+  };
+
+  const generateCharAvatar = async (charId) => {
+    const activeKey = userApiKey.trim();
+    if (!activeKey) return alert("API Key missing! Please enter your personal Gemini API key in the sidebar Settings panel.");
+    
+    setLoadingStates(prev => ({ ...prev, [`charImg-${charId}`]: true }));
+    const char = activeProfiles.find(c => c.id === charId);
+    const promptText = `A close-up cinematic headshot photograph of a ${char.age} year old ${char.sex || 'person'} with ${getSkinText(char.melanin)} who is ${getGenderText(char.gender)}. Vibe/Archetype: ${char.archetype}. Details: ${char.desc}. Plain neutral background. Highly detailed, photorealistic.`;
+
+    const maxRetries = 6; let delay = 3000;
+    try {
+      for (let i = 0; i < maxRetries; i++) {
+        try {
+          const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${globalImageModel}:predict?key=${activeKey}`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ instances: { prompt: promptText }, parameters: { sampleCount: 1, aspectRatio: '1:1' } })
+          });
+
+          if (response.status === 429) throw new Error("429");
+          if (!response.ok) throw new Error(`Google API threw a ${response.status}.`);
+
+          const result = await response.json();
+          const rawImageUrl = `data:image/png;base64,${result.predictions[0].bytesBase64Encoded}`;
+          
+          const img = new Image();
+          img.onload = () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = 256; canvas.height = 256;
+            const ctx = canvas.getContext('2d'); 
+            const size = Math.min(img.width, img.height);
+            const x = (img.width - size) / 2;
+            const y = (img.height - size) / 2;
+            ctx.drawImage(img, x, y, size, size, 0, 0, 256, 256);
+            updateChar(charId, 'image', canvas.toDataURL('image/jpeg', 0.8));
+          };
+          img.src = rawImageUrl;
+          break; 
+        } catch (error) {
+          if (i === maxRetries - 1) {
+            if (error.message === "429") alert(`Union Break! The Image AI hit a rate limit.`); 
+            else alert(`Image Error: ${error.message}`); 
+            throw error; 
+          }
+          await new Promise(r => setTimeout(r, delay)); delay *= 1.5; 
+        }
+      }
+    } finally { setLoadingStates(prev => ({ ...prev, [`charImg-${charId}`]: false })); }
   };
 
   // --- SCRIPT BREAKER LOGIC ---
@@ -935,7 +978,7 @@ const App = () => {
     try {
       const typeList = SHOT_TYPES.join(', ');
       const cameraMoveList = CAMERA_MOVES.join(', ');
-      const systemPrompt = `Expert comedy director. Generate JSON array of exactly 8 shots. Use these EXACT keys: "type" (MUST BE EXACTLY ONE OF: ${typeList}), "subject", "action", "notes", "dialogue", "duration" (estimated seconds, number), "cameraMove" (Must be one of: ${cameraMoveList}), "shotCharacters" (array of strings). CRITICAL: Treat every character as a distinctly separate individual. Do not merge their actions or dialogue. Keep descriptions punchy and direct. Max 1-2 sentences per field. Dialogue should be a single line or short improv prompt. DO NOT write full script pages.`;
+      const systemPrompt = `Expert director. Generate JSON array of exactly 8 shots. Use these EXACT keys: "type" (MUST BE EXACTLY ONE OF: ${typeList}), "subject", "action", "notes", "dialogue", "duration" (estimated seconds, number), "cameraMove" (Must be one of: ${cameraMoveList}), "shotCharacters" (array of strings). CRITICAL: Treat every character as a distinctly separate individual. Do not merge their actions or dialogue. Keep descriptions punchy and direct. Max 1-2 sentences per field. Dialogue should be a single line or short improv prompt. DO NOT write full script pages.`;
       const prompt = `PREMISE: ${activeSketch?.premise}\nTONE: ${activeSketch?.tone}\nCHARACTERS AVAILABLE: ${richCharactersContext}\nHOOK: ${activeSketch?.hook}\nESCALATION: ${activeSketch?.escalation}\nENDING: ${activeSketch?.ending}`;
       const newShotsData = await callGemini(prompt, systemPrompt, true);
       if (newShotsData) {
@@ -967,9 +1010,9 @@ const App = () => {
     try {
       const typeList = SHOT_TYPES.join(', ');
       const cameraMoveList = CAMERA_MOVES.join(', ');
-      const systemPrompt = `Expert comedy director. Generate exactly ONE new shot to continue the sequence. Return a SINGLE JSON OBJECT with these EXACT keys: "type" (MUST BE EXACTLY ONE OF: ${typeList}), "subject", "action", "notes", "dialogue", "duration" (estimated seconds, number), "cameraMove" (Must be one of: ${cameraMoveList}), "shotCharacters" (array of strings). CRITICAL: Treat every character as a distinctly separate individual. Do not merge their actions or dialogue. Keep all text punchy, direct, and brief.`;
+      const systemPrompt = `Expert director. Generate exactly ONE new shot to continue the sequence. Return a SINGLE JSON OBJECT with these EXACT keys: "type" (MUST BE EXACTLY ONE OF: ${typeList}), "subject", "action", "notes", "dialogue", "duration" (estimated seconds, number), "cameraMove" (Must be one of: ${cameraMoveList}), "shotCharacters" (array of strings). CRITICAL: Treat every character as a distinctly separate individual. Do not merge their actions or dialogue. Keep all text punchy, direct, and brief.`;
       const recentShots = activeShots.slice(-3).map(s => `Scene: ${s.sceneHeading}, Shot ${s.number}: [${s.type}] ${s.subject} - ${s.action}`).join('\n');
-      const prompt = `PREMISE: ${activeSketch?.premise}\nTONE: ${activeSketch?.tone}\nCHARACTERS: ${richCharactersContext}\nHOOK: ${activeSketch?.hook}\nRECENT SHOTS:\n${recentShots}\n\nCreate the NEXT logical shot to build the comedy.`;
+      const prompt = `PREMISE: ${activeSketch?.premise}\nTONE: ${activeSketch?.tone}\nCHARACTERS: ${richCharactersContext}\nHOOK: ${activeSketch?.hook}\nRECENT SHOTS:\n${recentShots}\n\nCreate the NEXT logical shot to build the scene.`;
       const newShotData = await callGemini(prompt, systemPrompt, true);
       if (newShotData) {
         updateContextState(prev => {
@@ -1011,7 +1054,7 @@ const App = () => {
   const generateScript = async () => {
     setLoadingStates(prev => ({ ...prev, script: true }));
     try {
-      const systemPrompt = `You are an expert comedy writer specializing in ${activeSketch?.tone} humor. Turn this shot list and outline into a formatted script. Write in PLAIN TEXT standard screenplay format. CRITICAL: DO NOT use any HTML tags like <center> or <b>. Use ALL CAPS for scene headings and character names. Use standard line breaks and spacing to format action lines and dialogue.`;
+      const systemPrompt = `You are an expert writer specializing in ${activeSketch?.tone} scripts. Turn this shot list and outline into a formatted script. Write in PLAIN TEXT standard screenplay format. CRITICAL: DO NOT use any HTML tags like <center> or <b>. Use ALL CAPS for scene headings and character names. Use standard line breaks and spacing to format action lines and dialogue.`;
       const prompt = `Title: ${activeSketch?.title}\nPremise: ${activeSketch?.premise}\nTone: ${activeSketch?.tone}\nCharacter Profiles: ${richCharactersContext}\nProps: ${activePropsList.join(', ')}\n\nShot List:\n${activeShots.map(s => `SCENE: ${s.sceneHeading}\nShot ${s.number} (${s.type} - ${s.cameraMove}): ${s.subject}\nAction: ${s.action}\nNotes: ${s.notes}\nDialogue: ${s.dialogue}`).join('\n\n')}`;
       const scriptContent = await callGemini(prompt, systemPrompt, false);
       if (scriptContent) {
@@ -1207,12 +1250,13 @@ const App = () => {
           {aiEnabled && (
             <div className="p-4 border-b border-zinc-800/50 space-y-3 bg-zinc-900/30">
               <div className="text-[9px] text-zinc-500 leading-tight">
-                Paste your personal Gemini API key here to bypass shared rate limits.
+                Paste your personal Gemini API key here to enable AI features.
                 <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-purple-400 hover:text-purple-300 underline ml-1 font-bold">Get a free key here.</a>
               </div>
               <input 
-                type="password" 
-                autoComplete="new-password"
+                type="text" 
+                style={{ WebkitTextSecurity: 'disc' }}
+                autoComplete="off"
                 data-lpignore="true"
                 value={userApiKey}
                 onChange={(e) => {
@@ -1777,7 +1821,7 @@ const App = () => {
                                 </div>
                                 <div className="flex items-center bg-zinc-950/50 border border-zinc-800/50 rounded-xl px-3 py-3 md:py-2 w-full"><Map size={12} className="text-zinc-500 mr-2 shrink-0" /><input value={shot.locationCaveat || ''} onChange={(e) => updateShot(shot.id, 'locationCaveat', e.target.value)} placeholder="Specific area caveat... (e.g. Corner desk)" className="w-full bg-transparent text-[10px] font-bold text-zinc-400 focus:outline-none min-w-0" /></div>
                                 
-                                {/* MOVED CAMERA MOVE AND DURATION TO LEFT PANEL */}
+                                {/* CAMERA MOVE AND DURATION */}
                                 <div className="flex gap-2 w-full">
                                   <div className="flex-1 bg-zinc-950/50 border border-zinc-800/50 rounded-xl focus-within:border-blue-500/50 transition-colors flex items-center px-2">
                                      <Video size={12} className="text-blue-500 mr-2 shrink-0"/>
