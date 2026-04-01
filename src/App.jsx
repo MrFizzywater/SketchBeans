@@ -131,6 +131,7 @@ const App = () => {
   const [boardCols, setBoardCols] = useState(2);
   const [printListMode, setPrintListMode] = useState('sequence'); 
   const [bulkHeadingEdit, setBulkHeadingEdit] = useState({ old: null, value: '' });
+  const [bulkCharEdit, setBulkCharEdit] = useState({ id: null, oldName: '', value: '' }); // <-- NEW STATE FOR CHARACTER RENAME
 
   // --- DERIVED CONTEXT LOGIC ---
   const activeSketch = sketches.find(s => s.id === activeSketchId) || sketches[0];
@@ -311,25 +312,40 @@ const App = () => {
   const addCharacter = () => updateSketch(activeSketchId, 'characterProfiles', [...activeProfiles, { id: Date.now().toString(), name: 'New Character', sex: 'Male', age: 30, gender: 50, melanin: 50, archetype: 'The Wildcard', desc: '', image: null }]);
   
   const updateChar = (charId, field, value) => {
-    const oldProfile = activeProfiles.find(p => p.id === charId);
+    // Stripped out the dangerous global regex replace from here
     updateSketch(activeSketchId, 'characterProfiles', activeProfiles.map(p => p.id === charId ? { ...p, [field]: value } : p));
+  };
 
-    // GLOBAL FIND & REPLACE FOR CHARACTER NAMES
-    if (field === 'name' && oldProfile && oldProfile.name !== value && oldProfile.name !== 'New Character' && value.trim() !== '') {
-      const oldName = oldProfile.name;
-      const newName = value;
+  const commitCharRename = () => {
+    if (!bulkCharEdit.id || !bulkCharEdit.value.trim() || bulkCharEdit.oldName === bulkCharEdit.value) {
+      setBulkCharEdit({ id: null, oldName: '', value: '' });
+      return;
+    }
+
+    const oldName = bulkCharEdit.oldName;
+    const newName = bulkCharEdit.value.trim();
+    const charId = bulkCharEdit.id;
+    const escapeRegExp = (string) => string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+    // 1. Update the profile name
+    updateSketch(activeSketchId, 'characterProfiles', activeProfiles.map(p => p.id === charId ? { ...p, name: newName } : p));
+
+    // 2. Global Find & Replace (Only if it wasn't the default 'New Character' placeholder)
+    if (oldName && oldName !== 'New Character') {
       
       updateContextState(prev => prev.map(shot => {
         if (shot.sketchId !== activeSketchId) return shot;
         let changed = false;
         let newShot = { ...shot };
 
+        // Update the shot character tags
         if (newShot.shotCharacters?.includes(oldName)) {
           newShot.shotCharacters = newShot.shotCharacters.map(c => c === oldName ? newName : c);
           changed = true;
         }
 
-        const regex = new RegExp(`\\b${oldName}\\b`, 'g');
+        // Regex replace in text fields (whole words only)
+        const regex = new RegExp(`\\b${escapeRegExp(oldName)}\\b`, 'g');
         ['action', 'dialogue', 'notes', 'subject'].forEach(key => {
           if (newShot[key] && typeof newShot[key] === 'string' && newShot[key].match(regex)) {
             newShot[key] = newShot[key].replace(regex, newName);
@@ -339,7 +355,7 @@ const App = () => {
         return changed ? newShot : shot;
       }), false);
 
-      const regexGlobal = new RegExp(`\\b${oldName}\\b`, 'g');
+      const regexGlobal = new RegExp(`\\b${escapeRegExp(oldName)}\\b`, 'g');
       let sketchChanged = false;
       let updatedActiveSketch = { ...activeSketch };
       
@@ -354,6 +370,8 @@ const App = () => {
         updateContextState(prev => prev.map(s => s.id === activeSketchId ? { ...s, ...updatedActiveSketch } : s), true);
       }
     }
+    
+    setBulkCharEdit({ id: null, oldName: '', value: '' });
   };
 
   const removeChar = (charId) => updateSketch(activeSketchId, 'characterProfiles', activeProfiles.filter(p => p.id !== charId));
@@ -1535,7 +1553,15 @@ const App = () => {
                            )}
                         </div>
                         <div className="flex-1 space-y-2">
-                           <input value={char.name || ''} onChange={(e) => updateChar(char.id, 'name', e.target.value)} placeholder="Character Name" className="bg-transparent text-2xl font-black focus:outline-none text-zinc-100 w-full placeholder-zinc-800 border-b border-zinc-800 focus:border-green-500 pb-1" />
+                           <input 
+                              value={bulkCharEdit.id === char.id ? bulkCharEdit.value : (char.name || '')} 
+                              onFocus={() => setBulkCharEdit({ id: char.id, oldName: char.name || '', value: char.name || '' })}
+                              onChange={(e) => setBulkCharEdit({ ...bulkCharEdit, value: e.target.value })}
+                              onBlur={commitCharRename}
+                              onKeyDown={(e) => e.key === 'Enter' && commitCharRename()}
+                              placeholder="Character Name" 
+                              className="bg-transparent text-2xl font-black focus:outline-none text-zinc-100 w-full placeholder-zinc-800 border-b border-zinc-800 focus:border-green-500 pb-1" 
+                           />
                            <select value={COMEDY_ARCHETYPES.includes(char.archetype) ? char.archetype : 'Other'} onChange={(e) => updateChar(char.id, 'archetype', e.target.value)} className="bg-zinc-950 text-green-400 text-xs font-bold px-3 py-1.5 rounded-lg border border-zinc-800 focus:outline-none cursor-pointer w-full appearance-none">
                               {COMEDY_ARCHETYPES.map(a => <option key={a} value={a}>{a}</option>)}
                            </select>
