@@ -1212,6 +1212,8 @@ const App = () => {
               </div>
               <input 
                 type="password" 
+                autoComplete="new-password"
+                data-lpignore="true"
                 value={userApiKey}
                 onChange={(e) => {
                   setUserApiKey(e.target.value);
@@ -1307,6 +1309,14 @@ const App = () => {
               <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-300">
                 <div className="flex items-center justify-between border-b border-zinc-800 pb-4">
                   <h2 className="text-xl md:text-2xl font-black uppercase tracking-tighter text-orange-500 flex items-center gap-2"><Settings2 size={24} /> Project Configuration</h2>
+                </div>
+
+                {/* PROJECT TITLE */}
+                <div className="space-y-2 bg-zinc-900/40 p-6 md:p-8 rounded-[2.5rem] border border-zinc-800/50 shadow-inner relative">
+                  <label className="text-[10px] font-black text-orange-500 uppercase tracking-widest flex items-center justify-between mb-2">
+                    <span className="flex items-center gap-2"><div className="w-1.5 h-1.5 bg-orange-500 rounded-full" /> Project Title</span>
+                  </label>
+                  <input value={activeSketch?.title || ''} onChange={(e) => updateSketch(activeSketchId, 'title', e.target.value)} placeholder="Untitled Project..." className="w-full bg-zinc-950/50 border border-zinc-800/80 rounded-xl p-4 text-xl font-black focus:outline-none focus:border-orange-500/50 text-zinc-200" />
                 </div>
 
                 {/* THE PREMISE SEED */}
@@ -1587,13 +1597,18 @@ const App = () => {
                           placeholder="Paste your script text here... It's best if scenes start with standard headings like INT. LOCATION - DAY, but the AI will try to infer them if missing." 
                           className="w-full bg-zinc-950/80 rounded-2xl p-4 md:p-6 text-sm font-mono text-zinc-300 min-h-[40vh] focus:outline-none border border-zinc-800/50 resize-y whitespace-pre-wrap"
                         />
-                        <div className="mt-4 flex flex-col sm:flex-row justify-end gap-3">
-                          <button onClick={analyzeScriptMetadata} disabled={!rawImportScript.trim() || !isRealUser || isAIBusy} className="px-6 py-3 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 text-purple-400 font-black text-[10px] rounded-full tracking-widest transition-all flex items-center justify-center gap-2">
-                            {loadingStates.analyzeScript ? <Loader2 size={14} className="animate-spin"/> : <Sparkles size={14}/>} 1. ANALYZE PROJECT METADATA & CAST
+                        <div className="mt-4 flex flex-col lg:flex-row justify-between gap-4">
+                          <button onClick={() => setRawImportScript(activeSketch?.script || '')} disabled={!activeSketch?.script} className="w-full lg:w-auto px-6 py-3 bg-zinc-800/50 hover:bg-zinc-700 disabled:opacity-50 text-blue-400 font-black text-[10px] rounded-full tracking-widest transition-all flex items-center justify-center gap-2 border border-zinc-800">
+                            <ScrollText size={14}/> PULL FROM SCRIPT EDITOR
                           </button>
-                          <button onClick={parseScriptIntoChunks} disabled={!rawImportScript.trim()} className="px-6 py-3 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white font-black text-xs rounded-full tracking-widest shadow-lg shadow-purple-900/20 transition-all flex items-center justify-center gap-2">
-                            <Scissors size={14}/> 2. SLICE INTO SCENES
-                          </button>
+                          <div className="flex flex-col sm:flex-row justify-end gap-3 w-full lg:w-auto">
+                            <button onClick={analyzeScriptMetadata} disabled={!rawImportScript.trim() || !isRealUser || isAIBusy} className="px-6 py-3 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 text-purple-400 font-black text-[10px] rounded-full tracking-widest transition-all flex items-center justify-center gap-2">
+                              {loadingStates.analyzeScript ? <Loader2 size={14} className="animate-spin"/> : <Sparkles size={14}/>} 1. ANALYZE METADATA & CAST
+                            </button>
+                            <button onClick={parseScriptIntoChunks} disabled={!rawImportScript.trim()} className="px-6 py-3 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white font-black text-xs rounded-full tracking-widest shadow-lg shadow-purple-900/20 transition-all flex items-center justify-center gap-2">
+                              <Scissors size={14}/> 2. SLICE INTO SCENES
+                            </button>
+                          </div>
                         </div>
                       </div>
                     ) : (
