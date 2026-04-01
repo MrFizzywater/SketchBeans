@@ -1845,7 +1845,7 @@ const App = () => {
                                 )}
                               </div>
                               
-                              {shot.lastEditedBy && isWritersRoom && <div className="mt-2 text-[9px] text-blue-400 italic">Last edit by: {shot.lastEditedBy}</div>}
+                              {shot.lastEditedBy && <div className="mt-2 text-[9px] text-blue-400 italic">Last edit by: {shot.lastEditedBy}</div>}
 
                               <div className="flex flex-col gap-2 w-full mt-4">
                                 <div className="flex items-center bg-zinc-950/50 border border-zinc-800/50 rounded-xl px-3 py-3 md:py-2 w-full focus-within:border-orange-500/50 transition-colors">
