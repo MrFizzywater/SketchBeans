@@ -331,6 +331,21 @@ const App = () => {
     }), false);
   };
 
+  const moveToPosition = (currentIndex, targetIndex) => {
+    if (currentIndex === targetIndex) return;
+    
+    const currentActiveShots = [...activeShots]; // Relies on the inherently sorted activeShots array
+    const [movedItem] = currentActiveShots.splice(currentIndex, 1);
+    currentActiveShots.splice(targetIndex, 0, movedItem);
+    
+    currentActiveShots.forEach((s, i) => { s.number = i + 1; });
+    
+    updateContextState(prev => {
+      const otherShots = prev.filter(s => s.sketchId !== activeSketchId);
+      return [...otherShots, ...currentActiveShots];
+    }, false);
+  };
+
   const confirmDeleteSketch = async () => {
     if (!sketchToDelete) return;
     const id = sketchToDelete.id;
@@ -526,7 +541,7 @@ const App = () => {
 
   // --- EXPORT & DOWNLOAD LOGIC ---
   const exportSnapshot = () => {
-    const data = { version: "5.0", timestamp: new Date().toISOString(), sketches, shots, publicSketches, publicShots };
+    const data = { version: "5.1", timestamp: new Date().toISOString(), sketches, shots, publicSketches, publicShots };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a'); link.href = url; link.download = `SketchBeans_FullBackup_${new Date().getTime()}.json`;
@@ -539,7 +554,7 @@ const App = () => {
     
     if (!targetSketch) return;
 
-    const data = { version: "5.0", timestamp: new Date().toISOString(), sketches: [targetSketch], shots: targetShots };
+    const data = { version: "5.1", timestamp: new Date().toISOString(), sketches: [targetSketch], shots: targetShots };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a'); link.href = url; 
@@ -744,16 +759,24 @@ const App = () => {
         
         // Handle Shots
         if (result.shots && Array.isArray(result.shots)) {
-          // get latest length so we append correctly
-          let currentShotCount = 0;
-          setShots(prev => { currentShotCount = prev.filter(s => s.sketchId === activeSketchId).length; return prev; });
-          
-          const newShotsData = result.shots.map((s, idx) => ({ 
-            ...s, id: (isWritersRoom ? 'pub_' : '') + `ai-chunk-${Date.now()}-${idx}`, sketchId: activeSketchId, number: currentShotCount + idx + 1, 
-            fx: false, image: null, sceneHeading: chunk.heading, cameraMove: s.cameraMove || 'Locked Off', shotCharacters: Array.isArray(s.shotCharacters) ? s.shotCharacters : [] 
-          }));
-          
-          updateContextState(prev => [...prev, ...newShotsData], false);
+          updateContextState(prev => {
+            const currentSketchShots = prev.filter(s => s.sketchId === activeSketchId);
+            const maxNum = currentSketchShots.length > 0 ? Math.max(...currentSketchShots.map(s => s.number)) : 0;
+            
+            const newShotsData = result.shots.map((s, idx) => ({ 
+              ...s, 
+              id: (isWritersRoom ? 'pub_' : '') + `ai-chunk-${Date.now()}-${idx}`, 
+              sketchId: activeSketchId, 
+              number: maxNum + idx + 1, 
+              fx: false, 
+              image: null, 
+              sceneHeading: chunk.heading, 
+              cameraMove: s.cameraMove || 'Locked Off', 
+              shotCharacters: Array.isArray(s.shotCharacters) ? s.shotCharacters : [] 
+            }));
+            
+            return [...prev, ...newShotsData];
+          }, false);
         }
       }
       
@@ -920,10 +943,23 @@ const App = () => {
       const prompt = `PREMISE: ${activeSketch?.premise}\nTONE: ${activeSketch?.tone}\nSCENE: ${formattedSceneHeading}\nCHARACTERS AVAILABLE: ${richCharactersContext}\nHOOK: ${activeSketch?.hook}\nESCALATION: ${activeSketch?.escalation}\nENDING: ${activeSketch?.ending}`;
       const newShotsData = await callGemini(prompt, systemPrompt, true);
       if (newShotsData) {
-        updateContextState(prev => [...prev, ...newShotsData.map((s, idx) => ({ 
-          ...s, id: (isWritersRoom ? 'pub_' : '') + `ai-${Date.now()}-${idx}`, sketchId: activeSketchId, number: activeShots.length + idx + 1, 
-          fx: false, image: null, sceneHeading: formattedSceneHeading, cameraMove: 'Locked Off', shotCharacters: Array.isArray(s.shotCharacters) ? s.shotCharacters : [] 
-        }))], false);
+        updateContextState(prev => {
+          const currentSketchShots = prev.filter(s => s.sketchId === activeSketchId);
+          const maxNum = currentSketchShots.length > 0 ? Math.max(...currentSketchShots.map(s => s.number)) : 0;
+          
+          const newShots = newShotsData.map((s, idx) => ({ 
+            ...s, 
+            id: (isWritersRoom ? 'pub_' : '') + `ai-${Date.now()}-${idx}`, 
+            sketchId: activeSketchId, 
+            number: maxNum + idx + 1, 
+            fx: false, 
+            image: null, 
+            sceneHeading: formattedSceneHeading, 
+            cameraMove: 'Locked Off', 
+            shotCharacters: Array.isArray(s.shotCharacters) ? s.shotCharacters : [] 
+          }));
+          return [...prev, ...newShots];
+        }, false);
       }
     } catch (err) { console.error(err); } finally { setLoadingStates(prev => ({ ...prev, genShots: false })); }
   };
@@ -937,12 +973,24 @@ const App = () => {
       const prompt = `PREMISE: ${activeSketch?.premise}\nTONE: ${activeSketch?.tone}\nSCENE: ${formattedSceneHeading}\nCHARACTERS: ${richCharactersContext}\nHOOK: ${activeSketch?.hook}\nRECENT SHOTS:\n${recentShots}\n\nCreate the NEXT logical shot to build the comedy.`;
       const newShotData = await callGemini(prompt, systemPrompt, true);
       if (newShotData) {
-        const nextNumber = activeShots.length > 0 ? Math.max(...activeShots.map(s => s.number)) + 1 : 1;
-        const lastHeading = activeShots.length > 0 ? activeShots[activeShots.length - 1].sceneHeading : formattedSceneHeading;
-        updateContextState(prev => [...prev, {
-          ...newShotData, id: (isWritersRoom ? 'pub_' : '') + `ai-single-${Date.now()}`, sketchId: activeSketchId, number: nextNumber,
-          fx: false, image: null, sceneHeading: lastHeading, cameraMove: 'Locked Off', shotCharacters: Array.isArray(newShotData.shotCharacters) ? newShotData.shotCharacters : []
-        }], false);
+        updateContextState(prev => {
+          const currentSketchShots = prev.filter(s => s.sketchId === activeSketchId);
+          const maxNum = currentSketchShots.length > 0 ? Math.max(...currentSketchShots.map(s => s.number)) : 0;
+          const lastHeading = currentSketchShots.length > 0 ? currentSketchShots[currentSketchShots.length - 1].sceneHeading : formattedSceneHeading;
+          
+          const newShot = {
+            ...newShotData, 
+            id: (isWritersRoom ? 'pub_' : '') + `ai-single-${Date.now()}`, 
+            sketchId: activeSketchId, 
+            number: maxNum + 1,
+            fx: false, 
+            image: null, 
+            sceneHeading: lastHeading, 
+            cameraMove: 'Locked Off', 
+            shotCharacters: Array.isArray(newShotData.shotCharacters) ? newShotData.shotCharacters : []
+          };
+          return [...prev, newShot];
+        }, false);
       }
     } catch (err) { console.error(err); } finally { setLoadingStates(prev => ({ ...prev, singleAIShot: false })); }
   };
@@ -1885,10 +1933,26 @@ const App = () => {
                                 {CAMERA_MOVES.map(m => <option key={m} value={m}>{m}</option>)}
                               </select>
                             </div>
-                            <div className="flex gap-1 bg-zinc-950/50 rounded-xl p-1 border border-zinc-800/50">
-                              <button onClick={() => moveShot(index, -1)} disabled={index === 0} className="p-2 md:p-1.5 text-zinc-600 hover:text-white disabled:opacity-20 transition-colors"><ArrowUp size={16} /></button>
-                              <button onClick={() => moveShot(index, 1)} disabled={index === activeShots.length - 1} className="p-2 md:p-1.5 text-zinc-600 hover:text-white disabled:opacity-20 transition-colors"><ArrowDown size={16} /></button>
+                            
+                            {/* THE JUMP MENU REORDERING UI */}
+                            <div className="flex items-center gap-1 bg-zinc-950/50 rounded-xl p-1 border border-zinc-800/50">
+                              <button onClick={() => moveShot(index, -1)} disabled={index === 0} className="p-2 md:p-1.5 text-zinc-600 hover:text-white disabled:opacity-20 transition-colors" title="Move Up"><ArrowUp size={16} /></button>
+                              
+                              <div className="flex items-center px-1">
+                                <span className="text-[9px] font-black text-zinc-600 uppercase tracking-widest mr-1.5 hidden md:block">POS</span>
+                                <select 
+                                  value={index + 1} 
+                                  onChange={(e) => moveToPosition(index, parseInt(e.target.value) - 1)}
+                                  className="bg-zinc-900 text-orange-500 text-xs font-black px-2 py-1.5 rounded-lg border border-zinc-800 focus:outline-none focus:border-orange-500/50 cursor-pointer appearance-none text-center min-w-[3rem]"
+                                  title="Jump to position"
+                                >
+                                  {activeShots.map((_, i) => <option key={i} value={i + 1}>{i + 1}</option>)}
+                                </select>
+                              </div>
+
+                              <button onClick={() => moveShot(index, 1)} disabled={index === activeShots.length - 1} className="p-2 md:p-1.5 text-zinc-600 hover:text-white disabled:opacity-20 transition-colors" title="Move Down"><ArrowDown size={16} /></button>
                             </div>
+
                           </div>
 
                         </div>
