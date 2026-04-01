@@ -4,9 +4,9 @@ import {
   AlertCircle, Wand2, Printer, Sparkles, 
   Loader2, Quote, Zap, ArrowLeft, Image as ImageIcon, 
   X, Download, Upload, Save, Maximize2, Map, 
-  ChevronUp, ChevronDown, 
+  ChevronUp, ChevronDown, Clock, ListVideo,
   UserPlus, ArrowUp, ArrowDown, Cloud, GitBranch, LogOut, Lock, Copy, Menu,
-  ScrollText, VenetianMask, Clapperboard, Key, EyeOff, User, Settings2, Users, Settings, Video, RefreshCcw, ArrowDownToLine, ArrowUpFromLine, Undo, Scissors, CheckCircle2
+  ScrollText, VenetianMask, Clapperboard, Key, EyeOff, User, Settings2, Users, Settings, Video, RefreshCcw, ArrowDownToLine, ArrowUpFromLine, Undo, Scissors, CheckCircle2, Film
 } from 'lucide-react';
 
 // --- FIREBASE IMPORTS ---
@@ -52,7 +52,7 @@ const SHOT_TYPES = ['Wide', 'Medium', 'Close Up', 'POV', 'Over the Shoulder', 'I
 const CAMERA_MOVES = ['Locked Off', 'Handheld / Shaky', 'Slow Creep In', 'Slow Creep Out', 'Crash Zoom', 'Whip Pan', 'Dolly Tracking', 'Dutch Angle', 'Crane Up', 'Crane Down'];
 const IMAGE_STYLES = ['Pencil Sketch', 'Photographic', 'Cinematic', 'Comic Book', 'Watercolor', '3D Render', 'Vintage Film'];
 const ASPECT_RATIOS = [{label: '16:9 (Widescreen)', val: '16:9'}, {label: '1:1 (Square)', val: '1:1'}, {label: '4:3 (Standard)', val: '4:3'}, {label: '9:16 (Vertical)', val: '9:16'}, {label: '3:4 (Portrait)', val: '3:4'}];
-
+const GENRES = ['Comedy', 'Horror', 'Sci-Fi', 'Drama', 'Thriller', 'Action', 'Documentary', 'Commercial', 'Music Video', 'Other'];
 const TONES = ['Absurdist', 'Disruptive / Cringe', 'Deadpan', 'Slapstick', 'Satire', 'Surreal', 'Mockumentary', 'Cinematic', 'Dark Comedy', 'Screwball', 'High Concept', 'Mumblecore', 'None', 'Other'];
 const COMEDY_ARCHETYPES = ['The Straight Man', 'The Wildcard', 'The Neurotic', 'The Himbo / Bimbo', 'The Agent of Chaos', 'The Deadpan', 'The Instigator', 'The Oblivious One', 'The Cynic', 'The Over-Enthusiast', 'The Voice of Reason', 'The Fall Guy', 'None', 'Other'];
 
@@ -68,6 +68,12 @@ const getSkinText = (val) => {
   return "Medium skin";
 };
 
+const formatTime = (secs) => {
+  const m = Math.floor(secs / 60);
+  const s = secs % 60;
+  return m > 0 ? `${m}m ${s}s` : `${s}s`;
+};
+
 const App = () => {
   const [user, setUser] = useState(null);
   const [authResolved, setAuthResolved] = useState(false);
@@ -78,27 +84,33 @@ const App = () => {
   const [sketches, setSketches] = useState([{ 
     id: '1', title: 'Welcome to SketchBeans 🎬', 
     premise: 'A director discovers a digital production rig that does the heavy lifting of pre-production, allowing them to visualize their absurd ideas instantly.',
-    settingType: 'INT.', location: 'THE EDIT BAY', timeOfDay: 'NIGHT', tone: 'Cinematic', imageStyle: 'Pencil Sketch', aspectRatio: '16:9',
+    genre: 'Comedy', tone: 'Cinematic', imageStyle: 'Pencil Sketch', aspectRatio: '16:9', props: ['Coffee cup', 'Mechanical keyboard'],
     characterProfiles: [
       { id: 'c1', name: 'The Director', sex: 'Female', age: 35, gender: 50, melanin: 50, archetype: 'The Neurotic', desc: 'Staring at a blank screen.', image: null },
       { id: 'c2', name: 'The AI', sex: 'Male', age: 1, gender: 50, melanin: 50, archetype: 'The Wildcard', desc: 'A chaotic but helpful partner.', image: null },
-    ], props: 'Coffee cup, Mechanical keyboard', hook: 'The Director is staring at a blank page.', escalation: 'They open SketchBeans.', ending: 'They get some sleep.', script: ''
+    ], hook: 'The Director is staring at a blank page.', escalation: 'They open SketchBeans.', ending: 'They get some sleep.', script: ''
   }]);
   const [shots, setShots] = useState([
-    { id: 's1', sketchId: '1', number: 1, type: 'Wide', cameraMove: 'Locked Off', subject: 'THE DASHBOARD', action: 'Welcome to SketchBeans! The key details of your sketch live right up there under the title. \n\nClick the "SCENE CONFIG" tab to change your location, comedic tone, and visual style.', notes: 'Keep the premise simple. The AI uses it to build everything else.', dialogue: '', fx: false, image: null, sceneHeading: 'INT. THE EDIT BAY - NIGHT', shotCharacters: [] }
+    { id: 's1', sketchId: '1', number: 1, type: 'Wide', cameraMove: 'Locked Off', duration: 8, subject: 'THE DASHBOARD', action: 'Welcome to SketchBeans! The key details of your sketch live right up there under the title. \n\nClick the "SCENE CONFIG" tab to change your location, comedic tone, and visual style.', notes: 'Keep the premise simple. The AI uses it to build everything else.', dialogue: '', fx: false, image: null, sceneHeading: 'INT. THE EDIT BAY - NIGHT', shotCharacters: [] }
   ]);
 
   // --- PUBLIC STATE (WRITER'S ROOM) ---
   const [publicSketches, setPublicSketches] = useState([]);
   const [publicShots, setPublicShots] = useState([]);
 
+  // --- UI & TAB STATE ---
+  const [activeSketchId, setActiveSketchId] = useState(localStorage.getItem('sketchbeans_active_sketch') || '1');
+  const [isSidebarOpen, setSidebarOpen] = useState(window.innerWidth > 768);
+  const [viewMode, setViewMode] = useState('scene'); // scene, characters, storyboard, script
+  const [boardSubTab, setBoardSubTab] = useState('grid'); // grid, shoot-plan, print-boards, print-list
+  const [scriptSubTab, setScriptSubTab] = useState('editor'); // editor, breaker
+  const [showAdvancedBeats, setShowAdvancedBeats] = useState(false);
+  const [newPropInput, setNewPropInput] = useState('');
+  
   // --- SCRIPT BREAKER STATE ---
   const [rawImportScript, setRawImportScript] = useState('');
   const [scriptChunks, setScriptChunks] = useState([]);
 
-  const [activeSketchId, setActiveSketchId] = useState(localStorage.getItem('sketchbeans_active_sketch') || '1');
-  const [isSidebarOpen, setSidebarOpen] = useState(window.innerWidth > 768);
-  const [viewMode, setViewMode] = useState('scene'); 
   const [shootPlan, setShootPlan] = useState([]);
   const [loadingStates, setLoadingStates] = useState({});
   const [isAIBusy, setIsAIBusy] = useState(false); 
@@ -127,10 +139,14 @@ const App = () => {
   
   const activeSketch = activeDataSourceSketches.find(s => s.id === activeSketchId) || activeDataSourceSketches[0] || sketches[0];
   const activeShots = activeDataSourceShots.filter(s => s.sketchId === activeSketchId).sort((a, b) => a.number - b.number);
-  const currentDisplayList = viewMode === 'shoot-plan' && shootPlan.length > 0 ? shootPlan : activeShots;
+  const currentDisplayList = boardSubTab === 'shoot-plan' && shootPlan.length > 0 ? shootPlan : activeShots;
   
+  const totalDurationSeconds = activeShots.reduce((acc, shot) => acc + (parseInt(shot.duration) || 0), 0);
+  
+  // Normalize props for rendering
+  const activePropsList = Array.isArray(activeSketch?.props) ? activeSketch.props : (activeSketch?.props ? String(activeSketch.props).split(',').map(s => s.trim()).filter(s => s) : []);
+
   const isOriginalAuthor = isWritersRoom && activeSketch?.originalAuthorId === user?.uid;
-  const formattedSceneHeading = `${activeSketch?.settingType || 'INT.'} ${activeSketch?.location || 'LOCATION'} - ${activeSketch?.timeOfDay || 'DAY'}`;
   const activeProfiles = activeSketch?.characterProfiles || [];
   const availableCharacters = activeProfiles.map(c => c.name);
   const richCharactersContext = activeProfiles.map(c => {
@@ -270,6 +286,21 @@ const App = () => {
     updateContextState(prev => prev.map(s => s.id === id ? { ...s, [field]: value, ...editorTag } : s), false);
   };
 
+  const handleAddProp = (e) => {
+    if (e.key === 'Enter' && e.target.value.trim()) {
+      e.preventDefault();
+      const newProp = e.target.value.trim();
+      if (!activePropsList.includes(newProp)) {
+        updateSketch(activeSketchId, 'props', [...activePropsList, newProp]);
+      }
+      e.target.value = '';
+    }
+  };
+
+  const removeProp = (indexToRemove) => {
+    updateSketch(activeSketchId, 'props', activePropsList.filter((_, idx) => idx !== indexToRemove));
+  };
+
   const toggleShotCharacter = (shotId, charName) => {
     updateContextState(prev => prev.map(s => {
       if (s.id !== shotId) return s;
@@ -284,17 +315,17 @@ const App = () => {
 
   const addShot = () => {
     const nextNumber = activeShots.length > 0 ? Math.max(...activeShots.map(s => s.number)) + 1 : 1;
-    // Default new shots to the previous shot's scene heading, or the global heading if it's the first shot
-    const lastHeading = activeShots.length > 0 ? activeShots[activeShots.length - 1].sceneHeading : formattedSceneHeading;
-    updateContextState(prev => [...prev, { id: (isWritersRoom ? 'pub_' : '') + Date.now().toString(), sketchId: activeSketchId, number: nextNumber, type: 'Medium', cameraMove: 'Locked Off', subject: '', action: '', notes: '', dialogue: '', fx: false, image: null, sceneHeading: lastHeading, shotCharacters: [] }], false);
+    // Default new shots to the previous shot's scene heading
+    const lastHeading = activeShots.length > 0 ? activeShots[activeShots.length - 1].sceneHeading : 'INT. LOCATION - DAY';
+    updateContextState(prev => [...prev, { id: (isWritersRoom ? 'pub_' : '') + Date.now().toString(), sketchId: activeSketchId, number: nextNumber, type: 'Medium', cameraMove: 'Locked Off', duration: 5, subject: '', action: '', notes: '', dialogue: '', fx: false, image: null, sceneHeading: lastHeading, shotCharacters: [] }], false);
   };
   
   const insertShotAt = (index, position) => {
     const currentActiveShots = [...activeShots];
     const insertIndex = position === 'before' ? index : index + 1;
-    const inheritedHeading = currentActiveShots[index]?.sceneHeading || formattedSceneHeading;
+    const inheritedHeading = currentActiveShots[index]?.sceneHeading || 'INT. LOCATION - DAY';
     const newShot = { 
-      id: (isWritersRoom ? 'pub_' : '') + Date.now().toString(), sketchId: activeSketchId, type: 'Medium', cameraMove: 'Locked Off',
+      id: (isWritersRoom ? 'pub_' : '') + Date.now().toString(), sketchId: activeSketchId, type: 'Medium', cameraMove: 'Locked Off', duration: 5,
       subject: '', action: '', notes: '', dialogue: '', fx: false, image: null, sceneHeading: inheritedHeading, shotCharacters: [] 
     };
     currentActiveShots.splice(insertIndex, 0, newShot);
@@ -316,7 +347,7 @@ const App = () => {
   };
 
   const moveShot = (currentIndex, direction) => {
-    if (viewMode !== 'storyboard') return;
+    if (boardSubTab !== 'grid') return;
     const newIndex = currentIndex + direction;
     if (newIndex < 0 || newIndex >= activeShots.length) return;
     const currentShot = activeShots[currentIndex];
@@ -334,7 +365,7 @@ const App = () => {
   const moveToPosition = (currentIndex, targetIndex) => {
     if (currentIndex === targetIndex) return;
     
-    const currentActiveShots = [...activeShots]; // Relies on the inherently sorted activeShots array
+    const currentActiveShots = [...activeShots]; 
     const [movedItem] = currentActiveShots.splice(currentIndex, 1);
     currentActiveShots.splice(targetIndex, 0, movedItem);
     
@@ -360,7 +391,7 @@ const App = () => {
       const updatedSketches = sketches.filter(s => s.id !== id);
       if (updatedSketches.length === 0) {
         const newId = Date.now().toString();
-        updatedSketches.push({ id: newId, title: 'New Sketch', settingType: 'INT.', location: 'LOCATION', timeOfDay: 'DAY', tone: 'Absurdist', imageStyle: 'Pencil Sketch', aspectRatio: '16:9', premise: '', characterProfiles: [], props: '', hook: '', escalation: '', ending: '', script: '' });
+        updatedSketches.push({ id: newId, title: 'New Project', genre: 'Comedy', tone: 'Absurdist', imageStyle: 'Pencil Sketch', aspectRatio: '16:9', premise: '', characterProfiles: [], props: [], hook: '', escalation: '', ending: '', script: '' });
         setActiveSketchId(newId);
       } else if (activeSketchId === id) setActiveSketchId(updatedSketches[0].id);
       
@@ -541,7 +572,7 @@ const App = () => {
 
   // --- EXPORT & DOWNLOAD LOGIC ---
   const exportSnapshot = () => {
-    const data = { version: "5.1", timestamp: new Date().toISOString(), sketches, shots, publicSketches, publicShots };
+    const data = { version: "6.0", timestamp: new Date().toISOString(), sketches, shots, publicSketches, publicShots };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a'); link.href = url; link.download = `SketchBeans_FullBackup_${new Date().getTime()}.json`;
@@ -554,11 +585,11 @@ const App = () => {
     
     if (!targetSketch) return;
 
-    const data = { version: "5.1", timestamp: new Date().toISOString(), sketches: [targetSketch], shots: targetShots };
+    const data = { version: "6.0", timestamp: new Date().toISOString(), sketches: [targetSketch], shots: targetShots };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a'); link.href = url; 
-    link.download = `SketchBeans_${targetSketch.title.replace(/[^a-z0-9]/gi, '_').toLowerCase() || 'sketch'}.json`;
+    link.download = `SketchBeans_${targetSketch.title.replace(/[^a-z0-9]/gi, '_').toLowerCase() || 'project'}.json`;
     document.body.appendChild(link); link.click(); document.body.removeChild(link);
   };
 
@@ -577,7 +608,6 @@ const App = () => {
           const newSketches = content.sketches.map(s => ({...s, id: `imp_${importId}_${s.id}`}));
           const newShots = content.shots.map(sh => {
              const matchingSketch = newSketches.find(ns => ns.id.endsWith(`_${sh.sketchId}`));
-             // ensure older JSON versions get a scene heading
              const sHeading = sh.sceneHeading || sh.locationCaveat || 'INT. IMPORTED LOCATION - DAY';
              return { ...sh, id: `imp_${importId}_${sh.id}`, sketchId: matchingSketch ? matchingSketch.id : sh.sketchId, sceneHeading: sHeading };
           });
@@ -621,7 +651,7 @@ const App = () => {
   const downloadShootPlan = () => {
     if (!shootPlan || shootPlan.length === 0) return;
     const safeTitle = activeSketch?.title?.toUpperCase() || 'UNTITLED';
-    let planText = `SHOOT PLAN: ${safeTitle}\n=========================================\n\nCHARACTERS: ${availableCharacters.join(', ') || 'N/A'}\nPROPS: ${activeSketch?.props || 'N/A'}\n\n=========================================\n\n`;
+    let planText = `SHOOT PLAN: ${safeTitle}\n=========================================\n\nCHARACTERS: ${availableCharacters.join(', ') || 'N/A'}\nPROPS: ${activePropsList.join(', ') || 'N/A'}\n\n=========================================\n\n`;
     
     let currentHeading = '';
 
@@ -633,6 +663,7 @@ const App = () => {
       
       planText += `${index + 1}. [${shot.type.toUpperCase()}] ${shot.subject.toUpperCase()}\n`;
       if (shot.cameraMove) planText += `   Camera Move: ${shot.cameraMove}\n`;
+      if (shot.duration) planText += `   Est. Time: ${shot.duration}s\n`;
       if (shot.shotCharacters?.length > 0) planText += `   Characters: ${shot.shotCharacters.join(', ')}\n`;
       if (shot.action) planText += `   Action: ${shot.action}\n`;
       if (shot.dialogue) planText += `   Dialogue: "${shot.dialogue}"\n`;
@@ -709,9 +740,40 @@ const App = () => {
   };
 
   // --- SCRIPT BREAKER LOGIC ---
+  const analyzeScriptMetadata = async () => {
+    if (!rawImportScript.trim()) return;
+    setLoadingStates(prev => ({ ...prev, analyzeScript: true }));
+    try {
+      const systemPrompt = `You are a script supervisor. Read the following script text.
+      Task: Extract the overarching metadata.
+      Return exactly this JSON:
+      {
+        "premise": "A 1-2 sentence summary of the core concept.",
+        "genre": "Must be one of: ${GENRES.join(', ')}",
+        "tone": "Must be one of: ${TONES.join(', ')}",
+        "props": ["Array", "of", "key", "physical", "props", "mentioned"]
+      }`;
+      const result = await callGemini(`SCRIPT TEXT:\n${rawImportScript}`, systemPrompt, true);
+      
+      if (result) {
+        if (result.premise) updateSketch(activeSketchId, 'premise', result.premise);
+        if (result.genre && GENRES.includes(result.genre)) updateSketch(activeSketchId, 'genre', result.genre);
+        if (result.tone && TONES.includes(result.tone)) updateSketch(activeSketchId, 'tone', result.tone);
+        if (result.props && Array.isArray(result.props)) {
+          const uniqueProps = [...new Set([...activePropsList, ...result.props])];
+          updateSketch(activeSketchId, 'props', uniqueProps);
+        }
+        alert("Script Metadata Analyzed & Applied to Config!");
+      }
+    } catch(err) {
+      console.error(err);
+    } finally {
+      setLoadingStates(prev => ({ ...prev, analyzeScript: false }));
+    }
+  };
+
   const parseScriptIntoChunks = () => {
     if (!rawImportScript.trim()) return;
-    // Regex matches INT., EXT., I/E. at the start of a new line
     const sceneRegex = /(?:^|\n)(?=(?:INT\.|EXT\.|I\/E\.)\s)/i;
     const parts = rawImportScript.split(sceneRegex).filter(p => p.trim().length > 0);
     
@@ -731,21 +793,21 @@ const App = () => {
     
     try {
       const typeList = SHOT_TYPES.join(', ');
-      const systemPrompt = `You are an expert 1st AD breaking down a script scene. The scene text is provided below. 
+      const systemPrompt = `You are an expert 1st AD breaking down a script scene. 
       Task 1: Identify any NEW characters in this scene that are NOT in the existing characters list. 
       Task 2: Create a logical shot list for this scene. 
       Return a JSON object: 
       {
         "newCharacters": [ { "name": "Name", "sex": "Male|Female|Intersex", "age": 30, "gender": 50, "melanin": 50, "archetype": "The Wildcard", "desc": "1 brief sentence" } ],
-        "shots": [ { "type": "(Must be one of: ${typeList})", "cameraMove": "Locked Off", "subject": "Subject", "action": "Action blocking", "dialogue": "Brief dialogue", "shotCharacters": ["Name1", "Name2"] } ]
-      }`;
+        "shots": [ { "type": "(Must be one of: ${typeList})", "cameraMove": "Locked Off", "duration": 5, "subject": "Subject", "action": "Action blocking", "dialogue": "Brief dialogue", "shotCharacters": ["Name1", "Name2"] } ]
+      }
+      Note: duration is your estimated runtime for that shot in seconds.`;
       
       const prompt = `SCENE HEADING: ${chunk.heading}\nEXISTING CHARACTERS: ${richCharactersContext}\n\nSCENE TEXT:\n${chunk.text}`;
       
       const result = await callGemini(prompt, systemPrompt, true);
       
       if (result) {
-        // Handle Characters
         if (result.newCharacters && Array.isArray(result.newCharacters)) {
            const newProfiles = result.newCharacters.map(c => ({
              id: Date.now().toString() + Math.random().toString(36).substring(7),
@@ -757,7 +819,6 @@ const App = () => {
            }
         }
         
-        // Handle Shots
         if (result.shots && Array.isArray(result.shots)) {
           updateContextState(prev => {
             const currentSketchShots = prev.filter(s => s.sketchId === activeSketchId);
@@ -772,6 +833,7 @@ const App = () => {
               image: null, 
               sceneHeading: chunk.heading, 
               cameraMove: s.cameraMove || 'Locked Off', 
+              duration: parseInt(s.duration) || 5,
               shotCharacters: Array.isArray(s.shotCharacters) ? s.shotCharacters : [] 
             }));
             
@@ -787,7 +849,6 @@ const App = () => {
     }
   };
 
-  // --- GET SHOT PROMPT MUST BE DEFINED BEFORE IMAGE AI CALLS ---
   const getShotPrompt = (shot) => {
     const charContext = shot.shotCharacters?.length > 0 
       ? shot.shotCharacters.map(n => {
@@ -797,7 +858,7 @@ const App = () => {
         }).join(', ') 
       : richCharactersContext;
 
-    const location = shot.sceneHeading || formattedSceneHeading;
+    const location = shot.sceneHeading || 'LOCATION';
     const style = activeSketch?.imageStyle || 'Pencil Sketch';
     
     let stylePrefix = "Rough storyboard sketch, mixed media graphite and colored pencil.";
@@ -808,7 +869,7 @@ const App = () => {
     else if (style === '3D Render') stylePrefix = "High-quality 3D render, stylized but detailed, cinematic lighting.";
     else if (style === 'Vintage Film') stylePrefix = "Vintage 35mm film still, grainy, retro color grading, nostalgic aesthetic.";
 
-    let prompt = `Sketch Context: ${activeSketch?.premise || activeSketch?.title}. Focus on creating a storyboard panel for THIS SPECIFIC SHOT: A ${shot.type} shot of ${shot.subject}. Location: ${location}. `;
+    let prompt = `Context: ${activeSketch?.premise || activeSketch?.title}. Focus on creating a storyboard panel for THIS SPECIFIC SHOT: A ${shot.type} shot of ${shot.subject}. Location: ${location}. `;
     if (shot.cameraMove !== 'Locked Off') prompt += `Framed for a ${shot.cameraMove} camera movement. `;
     if (shot.action) prompt += `Action: ${shot.action} `;
     if (charContext) prompt += `Featuring: ${charContext}. `;
@@ -917,6 +978,19 @@ const App = () => {
     } finally { setLoadingStates(prev => ({ ...prev, [`charImg-${charId}`]: false })); }
   };
 
+  const autoExtractProps = async () => {
+    if (!activeSketch?.script && !activeSketch?.premise) return alert("Add a premise or script first to extract props.");
+    setLoadingStates(prev => ({ ...prev, extractProps: true }));
+    try {
+      const prompt = `Extract a JSON array of strings containing physical props mentioned in this text. Text: ${activeSketch?.script || activeSketch?.premise}`;
+      const result = await callGemini(prompt, `You extract physical props. Return exactly this JSON: ["Prop 1", "Prop 2"]`, true);
+      if (result && Array.isArray(result)) {
+        const uniqueProps = [...new Set([...activePropsList, ...result])];
+        updateSketch(activeSketchId, 'props', uniqueProps);
+      }
+    } catch(e) { console.error(e); } finally { setLoadingStates(prev => ({ ...prev, extractProps: false })); }
+  };
+
   const extractCharacters = async () => {
     setLoadingStates(prev => ({ ...prev, extractChars: true }));
     try {
@@ -939,13 +1013,14 @@ const App = () => {
     setLoadingStates(prev => ({ ...prev, genShots: true }));
     try {
       const typeList = SHOT_TYPES.join(', ');
-      const systemPrompt = `Expert comedy director. Generate JSON array of exactly 8 shots. Use these EXACT keys: "type" (MUST BE EXACTLY ONE OF: ${typeList}), "subject", "action", "notes", "dialogue", "shotCharacters" (array of strings). CRITICAL: Treat every character as a distinctly separate individual. Do not merge their actions or dialogue. Keep descriptions punchy and direct. Max 1-2 sentences per field. Dialogue should be a single line or short improv prompt. DO NOT write full script pages.`;
-      const prompt = `PREMISE: ${activeSketch?.premise}\nTONE: ${activeSketch?.tone}\nSCENE: ${formattedSceneHeading}\nCHARACTERS AVAILABLE: ${richCharactersContext}\nHOOK: ${activeSketch?.hook}\nESCALATION: ${activeSketch?.escalation}\nENDING: ${activeSketch?.ending}`;
+      const systemPrompt = `Expert comedy director. Generate JSON array of exactly 8 shots. Use these EXACT keys: "type" (MUST BE EXACTLY ONE OF: ${typeList}), "subject", "action", "notes", "dialogue", "duration" (estimated seconds, number), "shotCharacters" (array of strings). CRITICAL: Treat every character as a distinctly separate individual. Do not merge their actions or dialogue. Keep descriptions punchy and direct. Max 1-2 sentences per field. Dialogue should be a single line or short improv prompt. DO NOT write full script pages.`;
+      const prompt = `PREMISE: ${activeSketch?.premise}\nTONE: ${activeSketch?.tone}\nCHARACTERS AVAILABLE: ${richCharactersContext}\nHOOK: ${activeSketch?.hook}\nESCALATION: ${activeSketch?.escalation}\nENDING: ${activeSketch?.ending}`;
       const newShotsData = await callGemini(prompt, systemPrompt, true);
       if (newShotsData) {
         updateContextState(prev => {
           const currentSketchShots = prev.filter(s => s.sketchId === activeSketchId);
           const maxNum = currentSketchShots.length > 0 ? Math.max(...currentSketchShots.map(s => s.number)) : 0;
+          const lastHeading = currentSketchShots.length > 0 ? currentSketchShots[currentSketchShots.length - 1].sceneHeading : 'INT. LOCATION - DAY';
           
           const newShots = newShotsData.map((s, idx) => ({ 
             ...s, 
@@ -954,8 +1029,9 @@ const App = () => {
             number: maxNum + idx + 1, 
             fx: false, 
             image: null, 
-            sceneHeading: formattedSceneHeading, 
+            sceneHeading: lastHeading, 
             cameraMove: 'Locked Off', 
+            duration: parseInt(s.duration) || 5,
             shotCharacters: Array.isArray(s.shotCharacters) ? s.shotCharacters : [] 
           }));
           return [...prev, ...newShots];
@@ -968,15 +1044,15 @@ const App = () => {
     setLoadingStates(prev => ({ ...prev, singleAIShot: true }));
     try {
       const typeList = SHOT_TYPES.join(', ');
-      const systemPrompt = `Expert comedy director. Generate exactly ONE new shot to continue the sequence. Return a SINGLE JSON OBJECT with these EXACT keys: "type" (MUST BE EXACTLY ONE OF: ${typeList}), "subject", "action", "notes", "dialogue", "shotCharacters" (array of strings). CRITICAL: Treat every character as a distinctly separate individual. Do not merge their actions or dialogue. Keep all text punchy, direct, and brief. Max 1-2 sentences per field. Dialogue should be a single line or short improv prompt. Do not over-write.`;
-      const recentShots = activeShots.slice(-3).map(s => `Shot ${s.number}: [${s.type}] ${s.subject} - ${s.action}`).join('\n');
-      const prompt = `PREMISE: ${activeSketch?.premise}\nTONE: ${activeSketch?.tone}\nSCENE: ${formattedSceneHeading}\nCHARACTERS: ${richCharactersContext}\nHOOK: ${activeSketch?.hook}\nRECENT SHOTS:\n${recentShots}\n\nCreate the NEXT logical shot to build the comedy.`;
+      const systemPrompt = `Expert comedy director. Generate exactly ONE new shot to continue the sequence. Return a SINGLE JSON OBJECT with these EXACT keys: "type" (MUST BE EXACTLY ONE OF: ${typeList}), "subject", "action", "notes", "dialogue", "duration" (estimated seconds, number), "shotCharacters" (array of strings). CRITICAL: Treat every character as a distinctly separate individual. Do not merge their actions or dialogue. Keep all text punchy, direct, and brief.`;
+      const recentShots = activeShots.slice(-3).map(s => `Scene: ${s.sceneHeading}, Shot ${s.number}: [${s.type}] ${s.subject} - ${s.action}`).join('\n');
+      const prompt = `PREMISE: ${activeSketch?.premise}\nTONE: ${activeSketch?.tone}\nCHARACTERS: ${richCharactersContext}\nHOOK: ${activeSketch?.hook}\nRECENT SHOTS:\n${recentShots}\n\nCreate the NEXT logical shot to build the comedy.`;
       const newShotData = await callGemini(prompt, systemPrompt, true);
       if (newShotData) {
         updateContextState(prev => {
           const currentSketchShots = prev.filter(s => s.sketchId === activeSketchId);
           const maxNum = currentSketchShots.length > 0 ? Math.max(...currentSketchShots.map(s => s.number)) : 0;
-          const lastHeading = currentSketchShots.length > 0 ? currentSketchShots[currentSketchShots.length - 1].sceneHeading : formattedSceneHeading;
+          const lastHeading = currentSketchShots.length > 0 ? currentSketchShots[currentSketchShots.length - 1].sceneHeading : 'INT. LOCATION - DAY';
           
           const newShot = {
             ...newShotData, 
@@ -986,7 +1062,8 @@ const App = () => {
             fx: false, 
             image: null, 
             sceneHeading: lastHeading, 
-            cameraMove: 'Locked Off', 
+            cameraMove: 'Locked Off',
+            duration: parseInt(newShotData.duration) || 5,
             shotCharacters: Array.isArray(newShotData.shotCharacters) ? newShotData.shotCharacters : []
           };
           return [...prev, newShot];
@@ -1003,7 +1080,7 @@ const App = () => {
       const optimizedIds = await callGemini(prompt, systemPrompt, true);
       if (optimizedIds) {
         setShootPlan(optimizedIds.map((item, idx) => ({ ...activeShots.find(s => s.id === item.id), shootOrderNumber: idx + 1, optimizationReason: item.reason })));
-        setViewMode('shoot-plan');
+        setBoardSubTab('shoot-plan');
       }
     } catch (err) { console.error(err); } finally { setLoadingStates(prev => ({ ...prev, optimizing: false })); }
   };
@@ -1012,11 +1089,10 @@ const App = () => {
     setLoadingStates(prev => ({ ...prev, script: true }));
     try {
       const systemPrompt = `You are an expert comedy writer specializing in ${activeSketch?.tone} humor. Turn this shot list and outline into a formatted script. Write in PLAIN TEXT standard screenplay format. CRITICAL: DO NOT use any HTML tags like <center> or <b>. Use ALL CAPS for scene headings and character names. Use standard line breaks and spacing to format action lines and dialogue.`;
-      const prompt = `Title: ${activeSketch?.title}\nPremise: ${activeSketch?.premise}\nTone: ${activeSketch?.tone}\nCharacter Profiles: ${richCharactersContext}\nProps: ${activeSketch?.props}\n\nShot List:\n${activeShots.map(s => `SCENE: ${s.sceneHeading}\nShot ${s.number} (${s.type} - ${s.cameraMove}): ${s.subject}\nAction: ${s.action}\nNotes: ${s.notes}\nDialogue: ${s.dialogue}`).join('\n\n')}`;
+      const prompt = `Title: ${activeSketch?.title}\nPremise: ${activeSketch?.premise}\nTone: ${activeSketch?.tone}\nCharacter Profiles: ${richCharactersContext}\nProps: ${activePropsList.join(', ')}\n\nShot List:\n${activeShots.map(s => `SCENE: ${s.sceneHeading}\nShot ${s.number} (${s.type} - ${s.cameraMove}): ${s.subject}\nAction: ${s.action}\nNotes: ${s.notes}\nDialogue: ${s.dialogue}`).join('\n\n')}`;
       const scriptContent = await callGemini(prompt, systemPrompt, false);
       if (scriptContent) {
         updateSketch(activeSketchId, 'script', scriptContent);
-        setViewMode('script');
       }
     } catch (err) { console.error(err); } finally { setLoadingStates(prev => ({ ...prev, script: false })); }
   };
@@ -1048,7 +1124,7 @@ const App = () => {
     setLoadingStates(prev => ({ ...prev, [beatType]: true }));
     try {
       const systemPrompt = `Brilliant comedy writer (${activeSketch?.tone || 'comedic'} humor). Provide a punchy, creative ${beatType} for the sketch. Write in descriptive screenplay outline format. Focus on what we SEE and HEAR. Keep it brief—max 2 sentences.`;
-      const prompt = `Title: ${activeSketch?.title}\nPrimary Location: ${formattedSceneHeading}\nCharacter Profiles: ${richCharactersContext}\nCurrent Premise: ${activeSketch?.premise}\nCurrent Hook: ${activeSketch?.hook}\nCurrent Escalation: ${activeSketch?.escalation}\nCurrent Ending: ${activeSketch?.ending}\nTask: Write/Improve the ${beatType.toUpperCase()}.`;
+      const prompt = `Title: ${activeSketch?.title}\nCharacter Profiles: ${richCharactersContext}\nCurrent Premise: ${activeSketch?.premise}\nCurrent Hook: ${activeSketch?.hook}\nCurrent Escalation: ${activeSketch?.escalation}\nCurrent Ending: ${activeSketch?.ending}\nTask: Write/Improve the ${beatType.toUpperCase()}.`;
       const newBeat = await callGemini(prompt, systemPrompt, false);
       if (newBeat) {
         setHistory(prev => ({ ...prev, [`sketch-${beatType}`]: activeSketch[beatType] || '' }));
@@ -1070,7 +1146,7 @@ const App = () => {
     const char = activeProfiles.find(c => c.id === charId);
     try {
       const existing = char.desc ? `CURRENT DETAILS (YES, AND... THESE): "${char.desc}"\n` : '';
-      const prompt = `Scene: ${formattedSceneHeading}\nPremise: ${activeSketch?.premise}\nSketch Hook: ${activeSketch?.hook}\nCharacter Name: ${char.name}\nCharacter Tropes: ${char.archetype}, ${char.age} years old, ${char.sex || 'Person'}, ${getGenderText(char.gender)}, ${getSkinText(char.melanin)}\n${existing}Task: Write a character introduction for a screenplay. Describe what we SEE (weird physical traits, wardrobe, posture) and their fatal flaw. Max 1-2 vivid sentences.`;
+      const prompt = `Premise: ${activeSketch?.premise}\nSketch Hook: ${activeSketch?.hook}\nCharacter Name: ${char.name}\nCharacter Tropes: ${char.archetype}, ${char.age} years old, ${char.sex || 'Person'}, ${getGenderText(char.gender)}, ${getSkinText(char.melanin)}\n${existing}Task: Write a character introduction for a screenplay. Describe what we SEE (weird physical traits, wardrobe, posture) and their fatal flaw. Max 1-2 vivid sentences.`;
       const newDesc = await callGemini(prompt, `Expert comedy writer (${activeSketch?.tone || 'comedic'} humor).`, false);
       if (newDesc) {
         setHistory(prev => ({ ...prev, [`char-${charId}-desc`]: char.desc || '' }));
@@ -1094,122 +1170,6 @@ const App = () => {
 
   if (!authResolved) {
     return <div className="h-screen bg-zinc-950 flex items-center justify-center"><Loader2 className="animate-spin text-orange-500" size={32} /></div>;
-  }
-
-  if (viewMode === 'print' || viewMode === 'print-boards') {
-    return (
-      <div className="min-h-screen bg-white text-black p-6 md:p-12 font-serif overflow-y-auto">
-        <div className="fixed top-4 left-4 md:top-6 md:left-6 flex items-center gap-2 print:hidden z-50">
-          <button onClick={() => setViewMode('storyboard')} className="flex items-center gap-2 px-4 py-2 bg-black hover:bg-zinc-800 transition-colors text-white rounded-full text-xs font-bold shadow-lg">
-            <ArrowLeft size={14} /> BACK
-          </button>
-          
-          {viewMode === 'print-boards' && (
-            <div className="flex bg-zinc-200 rounded-full p-1 shadow-lg items-center ml-2">
-              <span className="text-[10px] font-black uppercase text-zinc-500 px-3 select-none">Columns:</span>
-              {[1, 2, 3, 4].map(num => (
-                <button key={num} onClick={() => setBoardCols(num)} className={`px-4 py-1.5 rounded-full text-xs font-bold transition-colors ${boardCols === num ? 'bg-black text-white' : 'text-zinc-600 hover:text-black'}`}>
-                  {num}
-                </button>
-              ))}
-            </div>
-          )}
-          
-          <button onClick={() => window.print()} className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 transition-colors text-white rounded-full text-xs font-bold shadow-lg ml-2">
-            <Printer size={14} /> PRINT PDF
-          </button>
-        </div>
-
-        <div className="max-w-6xl mx-auto space-y-8 mt-16 md:mt-0">
-          <div className="border-b-4 border-black pb-4 flex flex-col md:flex-row justify-between md:items-end gap-2">
-            <h1 className="text-3xl md:text-4xl font-black uppercase tracking-tighter leading-none">{activeSketch?.title}</h1>
-            <div className="text-left md:text-right text-[10px] font-bold uppercase">{new Date().toLocaleDateString()}</div>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-8 border-b border-black pb-4 text-sm">
-            <p><strong>PRIMARY LOC:</strong> {formattedSceneHeading}</p>
-            <p><strong>CHARACTERS:</strong> {availableCharacters.join(', ') || 'N/A'}</p>
-            <p className="md:col-span-2"><strong>PROPS:</strong> {activeSketch?.props || 'None'}</p>
-            {activeSketch?.premise && <p className="md:col-span-2 text-xs italic"><strong>PREMISE:</strong> {activeSketch.premise}</p>}
-          </div>
-
-          {viewMode === 'print' ? (
-            <div className="space-y-4 overflow-x-auto">
-              <table className="w-full text-left border-collapse min-w-[600px]">
-                <thead><tr className="border-b-2 border-black text-[10px] font-black uppercase tracking-widest"><th className="py-2 w-12">#</th><th className="py-2 w-24">Type</th><th className="py-2">Details & Action</th><th className="py-2 w-16">FX</th></tr></thead>
-                <tbody>
-                  {currentDisplayList.map((shot, idx) => (
-                    <React.Fragment key={shot.id}>
-                      {/* Only show heading if it changes */}
-                      {(idx === 0 || shot.sceneHeading !== currentDisplayList[idx-1].sceneHeading) && (
-                        <tr>
-                          <td colSpan="4" className="py-4 font-black uppercase border-b border-black text-xs bg-zinc-100 px-2">{shot.sceneHeading}</td>
-                        </tr>
-                      )}
-                      <tr className="border-b border-zinc-200 align-top break-inside-avoid">
-                        <td className="py-4 font-bold">{idx + 1}</td>
-                        <td className="py-4 font-bold text-[10px] uppercase">
-                          {shot.type}
-                          {shot.cameraMove && shot.cameraMove !== 'Locked Off' && <span className="block text-[8px] text-blue-600 mt-1">{shot.cameraMove}</span>}
-                          {shot.shotCharacters?.length > 0 && (
-                            <div className="mt-2 space-y-1">
-                              {shot.shotCharacters.map(c => <span key={c} className="block text-[8px] bg-zinc-100 px-1 py-0.5 rounded border border-zinc-300 w-fit">{c}</span>)}
-                            </div>
-                          )}
-                        </td>
-                        <td className="py-4 space-y-1 pr-4">
-                          <p className="font-bold">{shot.subject}</p>
-                          {shot.action && <p className="text-sm">{shot.action}</p>}
-                          {shot.dialogue && <p className="text-xs italic">"{shot.dialogue}"</p>}
-                          {shot.notes && <p className="text-[10px] text-zinc-500">Note: {shot.notes}</p>}
-                        </td>
-                        <td className="py-4 font-black text-xs">{shot.fx ? 'YES' : '—'}</td>
-                      </tr>
-                    </React.Fragment>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <div className={`grid ${gridColsClass} gap-6 md:gap-8 w-full print:gap-4`}>
-              {currentDisplayList.map((shot, idx) => (
-                <div key={shot.id} className="break-inside-avoid flex flex-col border-2 border-black rounded-lg overflow-hidden bg-white shadow-sm">
-                  <div className="bg-black text-white text-[9px] font-black uppercase p-1.5 truncate border-b border-black">
-                    {shot.sceneHeading}
-                  </div>
-                  <div className="aspect-video border-b-2 border-black bg-zinc-100 flex items-center justify-center relative overflow-hidden" style={{ aspectRatio: (activeSketch?.aspectRatio || '16:9').replace(':', '/') }}>
-                    {shot.image ? (
-                      <img src={shot.image} alt={`Shot ${idx + 1}`} className="w-full h-full object-cover" />
-                    ) : (
-                      <div className="text-zinc-300 font-sans font-black tracking-widest uppercase text-xl">NO IMAGE</div>
-                    )}
-                    <div className="absolute top-2 left-2 bg-white border-2 border-black px-2 py-0.5 text-xs font-black shadow-[2px_2px_0px_rgba(0,0,0,1)] text-black">
-                      {idx + 1}
-                    </div>
-                    {shot.fx && (
-                      <div className="absolute top-2 right-2 bg-orange-500 text-white border-2 border-black px-2 py-0.5 text-[10px] font-black shadow-[2px_2px_0px_rgba(0,0,0,1)]">
-                        FX
-                      </div>
-                    )}
-                  </div>
-                  <div className="p-4 font-sans space-y-3">
-                    <div className="font-black uppercase text-sm border-b border-zinc-200 pb-2 text-black">
-                      <span className="text-zinc-500 mr-2">[{shot.type}]</span>{shot.subject}
-                    </div>
-                    <div className="text-xs space-y-2 text-black">
-                      {shot.locationCaveat && <div className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest bg-zinc-100 p-1.5 rounded inline-block mb-1">LOC: {shot.locationCaveat}</div>}
-                      {shot.cameraMove && shot.cameraMove !== 'Locked Off' && <div className="text-[9px] font-bold text-blue-500 uppercase tracking-widest bg-blue-50 p-1.5 rounded inline-block ml-1 mb-1 border border-blue-200"><Video size={10} className="inline mr-1 -mt-0.5"/>{shot.cameraMove}</div>}
-                      {shot.action && <p className="leading-snug"><span className="font-bold uppercase text-[10px] tracking-widest block text-zinc-500 mb-0.5">Action</span> {shot.action}</p>}
-                      {shot.dialogue && <p className="leading-snug italic"><span className="font-bold uppercase not-italic text-[10px] tracking-widest block text-zinc-500 mb-0.5">Dialogue</span> "{shot.dialogue}"</p>}
-                      {shot.notes && <p className="leading-snug text-zinc-600"><span className="font-bold text-black uppercase text-[10px] tracking-widest block mb-0.5">Notes</span> {shot.notes}</p>}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-    );
   }
 
   return (
@@ -1248,7 +1208,7 @@ const App = () => {
               <AlertCircle className="text-red-500" size={32} />
             </div>
             <div>
-              <h3 className="text-xl font-black text-white uppercase tracking-tighter">Delete Sketch?</h3>
+              <h3 className="text-xl font-black text-white uppercase tracking-tighter">Delete Project?</h3>
               <p className="text-zinc-400 text-sm mt-2">This will permanently destroy "{sketchToDelete.title}" and all its associated shots. You cannot fix this in post.</p>
             </div>
             <div className="flex gap-3">
@@ -1261,11 +1221,11 @@ const App = () => {
 
       {/* MOBILE OVERLAY */}
       {isSidebarOpen && (
-        <div className="fixed inset-0 bg-black/60 z-30 md:hidden backdrop-blur-sm" onClick={() => setSidebarOpen(false)} />
+        <div className="fixed inset-0 bg-black/60 z-30 md:hidden backdrop-blur-sm print:hidden" onClick={() => setSidebarOpen(false)} />
       )}
 
       {/* SIDEBAR */}
-      <aside className={`absolute md:relative z-40 h-full ${isSidebarOpen ? 'w-72 md:w-72 translate-x-0' : 'w-72 -translate-x-full md:w-0 md:translate-x-0'} transition-all duration-300 overflow-hidden bg-zinc-900 border-r border-zinc-800 flex flex-col shrink-0`}>
+      <aside className={`absolute md:relative z-40 h-full ${isSidebarOpen ? 'w-72 md:w-72 translate-x-0' : 'w-72 -translate-x-full md:w-0 md:translate-x-0'} transition-all duration-300 overflow-hidden bg-zinc-900 border-r border-zinc-800 flex flex-col shrink-0 print:hidden`}>
         <div className="p-6 flex justify-between items-center">
           <h1 className="text-xl font-bold tracking-tighter flex items-center gap-2">
             <Camera className="text-orange-500" size={20} /> SKETCHBEANS
@@ -1290,7 +1250,7 @@ const App = () => {
               </div>
             </div>
           ))}
-          <button onClick={() => { const id = Date.now().toString(); setSketches([...sketches, { id, title: 'New Sketch', settingType: 'INT.', location: 'LOCATION', timeOfDay: 'DAY', tone: 'Absurdist', imageStyle: 'Pencil Sketch', aspectRatio: '16:9', premise: '', characters: '', characterProfiles: [], props: '', hook: '', escalation: '', ending: '', script: '' }]); setActiveSketchId(id); if(window.innerWidth < 768) setSidebarOpen(false); }} className="w-full mt-4 flex items-center gap-2 px-3 py-2 text-xs text-zinc-500 hover:text-zinc-200"><Plus size={14} /> NEW PROJECT</button>
+          <button onClick={() => { const id = Date.now().toString(); setSketches([...sketches, { id, title: 'New Project', genre: 'Comedy', tone: 'Absurdist', imageStyle: 'Pencil Sketch', aspectRatio: '16:9', premise: '', characterProfiles: [], props: [], hook: '', escalation: '', ending: '', script: '' }]); setActiveSketchId(id); if(window.innerWidth < 768) setSidebarOpen(false); }} className="w-full mt-4 flex items-center gap-2 px-3 py-2 text-xs text-zinc-500 hover:text-zinc-200"><Plus size={14} /> NEW PROJECT</button>
 
           {/* PUBLIC WRITER'S ROOM LIST */}
           <div className="text-[10px] font-black text-blue-500 uppercase tracking-widest px-3 mt-8 mb-2 flex items-center gap-1"><Users size={12}/> The Writer's Room</div>
@@ -1333,7 +1293,7 @@ const App = () => {
             </div>
           </div>
 
-          {/* BYOK: Bring Your Own Key Section (Hides if AI is disabled) */}
+          {/* BYOK: Bring Your Own Key Section */}
           {aiEnabled && (
             <div className="p-4 border-b border-zinc-800/50 space-y-3 bg-zinc-900/30">
               <div className="text-[9px] text-zinc-500 leading-tight">
@@ -1384,20 +1344,21 @@ const App = () => {
       </aside>
 
       <main className="flex-1 flex flex-col min-w-0 h-full relative">
-        <button onClick={() => setSidebarOpen(!isSidebarOpen)} className="absolute left-0 top-1/2 -translate-y-1/2 bg-zinc-800 p-1.5 md:p-1 rounded-r-md z-20 transition-all hover:bg-orange-500 hidden md:block">
+        <button onClick={() => setSidebarOpen(!isSidebarOpen)} className="absolute left-0 top-1/2 -translate-y-1/2 bg-zinc-800 p-1.5 md:p-1 rounded-r-md z-20 transition-all hover:bg-orange-500 hidden md:block print:hidden">
           <ChevronRight className={isSidebarOpen ? 'rotate-180' : ''} size={16} />
         </button>
 
-        <div className="flex-1 overflow-y-auto w-full">
+        <div className="flex-1 overflow-y-auto w-full relative">
+          
           {/* REDESIGNED NAVIGATION HEADER */}
-          <header className={`p-4 md:p-6 border-b border-zinc-800 ${isWritersRoom ? 'bg-blue-950/20' : 'bg-zinc-950'} md:backdrop-blur-xl sticky top-0 z-20 w-full shrink-0 shadow-lg transition-colors`}>
+          <header className={`p-4 md:p-6 border-b border-zinc-800 ${isWritersRoom ? 'bg-blue-950/20' : 'bg-zinc-950'} md:backdrop-blur-xl sticky top-0 z-20 w-full shrink-0 shadow-lg transition-colors print:hidden`}>
             
             {/* WRITER'S ROOM BANNER */}
             {isWritersRoom && (
               <div className="max-w-6xl mx-auto mb-4 bg-blue-600/10 border border-blue-500/30 rounded-xl p-3 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
                 <div>
                   <h3 className="text-xs font-black text-blue-400 uppercase tracking-widest flex items-center gap-2"><GitBranch size={14}/> The Writer's Room (Public Branch)</h3>
-                  <p className="text-[10px] text-blue-300/70 mt-1">Anyone can edit this sketch. {isOriginalAuthor ? "You are the showrunner." : `Original author: ${activeSketch.originalAuthorName}`}</p>
+                  <p className="text-[10px] text-blue-300/70 mt-1">Anyone can edit this. {isOriginalAuthor ? "You are the showrunner." : `Original author: ${activeSketch.originalAuthorName}`}</p>
                 </div>
                 {isOriginalAuthor && (
                   <div className="flex gap-2 w-full sm:w-auto">
@@ -1413,7 +1374,7 @@ const App = () => {
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex items-center gap-3 flex-1">
                     <button onClick={() => setSidebarOpen(true)} className="md:hidden text-zinc-400 hover:text-white shrink-0"><Menu size={24}/></button>
-                    <input value={activeSketch?.title || ''} onChange={(e) => updateSketch(activeSketchId, 'title', e.target.value)} className="bg-transparent text-2xl md:text-4xl font-black focus:outline-none w-full tracking-tighter truncate" placeholder="Title..." />
+                    <input value={activeSketch?.title || ''} onChange={(e) => updateSketch(activeSketchId, 'title', e.target.value)} className="bg-transparent text-2xl md:text-4xl font-black focus:outline-none w-full tracking-tighter truncate" placeholder="Project Title..." />
                   </div>
                   {/* OPEN WRITER'S ROOM BUTTON (Only shown on Private Master) */}
                   {!isWritersRoom && isRealUser && (
@@ -1423,116 +1384,36 @@ const App = () => {
                   )}
                 </div>
                 
-                {/* HIGH VISIBILITY SCENE METADATA BADGES */}
+                {/* HIGH VISIBILITY METADATA BADGES */}
                 <div className="flex flex-wrap items-center gap-2 text-[10px] font-black uppercase tracking-widest">
-                  <span className="bg-orange-500/10 text-orange-500 border border-orange-500/20 px-2.5 py-1 rounded-md flex items-center gap-1 shadow-sm"><Map size={12}/> PRIMARY: {formattedSceneHeading}</span>
-                  <span className="bg-purple-500/10 text-purple-400 border border-purple-500/20 px-2.5 py-1 rounded-md flex items-center gap-1 shadow-sm"><VenetianMask size={12}/> {activeSketch?.tone || 'No Tone'}</span>
-                  <span className="bg-blue-500/10 text-blue-400 border border-blue-500/20 px-2.5 py-1 rounded-md flex items-center gap-1 shadow-sm"><ImageIcon size={12}/> {activeSketch?.imageStyle || 'Pencil Sketch'}</span>
-                  <span className="bg-zinc-800 text-zinc-300 border border-zinc-700 px-2.5 py-1 rounded-md flex items-center gap-1 shadow-sm"><Layout size={12}/> {activeSketch?.aspectRatio || '16:9'}</span>
-                  <span className="bg-green-500/10 text-green-400 border border-green-500/20 px-2.5 py-1 rounded-md flex items-center gap-1 truncate max-w-[200px] shadow-sm"><Users size={12}/> {availableCharacters.join(', ') || 'No Characters'}</span>
+                  <span className="bg-green-500/10 text-green-400 border border-green-500/20 px-2.5 py-1 rounded-md flex items-center gap-1 shadow-sm"><Clock size={12}/> EST. RUNTIME: {formatTime(totalDurationSeconds)}</span>
+                  <span className="bg-purple-500/10 text-purple-400 border border-purple-500/20 px-2.5 py-1 rounded-md flex items-center gap-1 shadow-sm"><Film size={12}/> {activeSketch?.genre || 'Comedy'} / {activeSketch?.tone || 'Absurdist'}</span>
+                  <span className="bg-blue-500/10 text-blue-400 border border-blue-500/20 px-2.5 py-1 rounded-md flex items-center gap-1 shadow-sm"><ImageIcon size={12}/> {activeSketch?.imageStyle || 'Pencil Sketch'} ({activeSketch?.aspectRatio || '16:9'})</span>
+                  <span className="bg-zinc-800 text-zinc-300 border border-zinc-700 px-2.5 py-1 rounded-md flex items-center gap-1 shadow-sm"><Users size={12}/> {availableCharacters.length} Characters</span>
                 </div>
               </div>
               
               {/* HORIZONTAL TAB NAVIGATION */}
               <div className="flex items-center gap-2 overflow-x-auto pb-2 border-b border-zinc-800/50 mt-2">
                 <button onClick={() => setViewMode('scene')} className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs font-black whitespace-nowrap transition-all ${viewMode === 'scene' ? 'bg-orange-500 text-white shadow-lg shadow-orange-900/20' : 'bg-zinc-900/50 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200'}`}>
-                  <Settings2 size={14}/> SCENE CONFIG
+                  <Settings2 size={14}/> CONFIG
                 </button>
                 <button onClick={() => setViewMode('characters')} className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs font-black whitespace-nowrap transition-all ${viewMode === 'characters' ? 'bg-green-600 text-white shadow-lg shadow-green-900/20' : 'bg-zinc-900/50 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200'}`}>
                   <Users size={14}/> CHARACTER BIBLE
                 </button>
-                {aiEnabled && (
-                  <button onClick={() => setViewMode('breaker')} className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs font-black whitespace-nowrap transition-all ${viewMode === 'breaker' ? 'bg-purple-600 text-white shadow-lg shadow-purple-900/20' : 'bg-zinc-900/50 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200'}`}>
-                    <Scissors size={14}/> SCRIPT BREAKER
-                  </button>
-                )}
                 <button onClick={() => setViewMode('storyboard')} className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs font-black whitespace-nowrap transition-all ${viewMode === 'storyboard' ? 'bg-zinc-100 text-zinc-950 shadow-lg' : 'bg-zinc-900/50 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200'}`}>
                   <Layout size={14}/> STORYBOARD
                 </button>
                 <button onClick={() => setViewMode('script')} className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs font-black whitespace-nowrap transition-all ${viewMode === 'script' ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20' : 'bg-zinc-900/50 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200'}`}>
                   <ScrollText size={14}/> SCRIPT
                 </button>
-                
-                <div className="w-px h-6 bg-zinc-800 mx-2 shrink-0 hidden sm:block"></div>
-                
-                <button onClick={() => shootPlan.length > 0 ? setViewMode('shoot-plan') : optimizeShootOrder()} disabled={!isRealUser && shootPlan.length === 0 || isAIBusy} className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs font-black whitespace-nowrap transition-all disabled:opacity-50 ${viewMode === 'shoot-plan' ? 'bg-yellow-500 text-black shadow-lg' : 'text-zinc-500 border border-zinc-800 hover:text-white'}`}>
-                  {loadingStates.optimizing ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />} SHOOT PLAN
-                </button>
-                <button onClick={() => setViewMode('print-boards')} className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs font-black whitespace-nowrap transition-all ${viewMode === 'print-boards' ? 'bg-zinc-100 text-zinc-950 shadow-lg' : 'text-zinc-500 hover:bg-zinc-900 hover:text-white border border-zinc-800'}`}>
-                  <Layout size={14} /> BOARDS
-                </button>
-                <button onClick={() => setViewMode('print')} className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs font-black whitespace-nowrap transition-all ${viewMode === 'print' ? 'bg-zinc-100 text-zinc-950 shadow-lg' : 'text-zinc-500 hover:bg-zinc-900 hover:text-white border border-zinc-800'}`}>
-                  <Printer size={14} /> PRINT LIST
-                </button>
               </div>
 
             </div>
           </header>
 
-          <div className="p-4 md:p-8 max-w-6xl mx-auto w-full pb-32">
+          <div className="p-4 md:p-8 max-w-6xl mx-auto w-full pb-32 print:p-0 print:max-w-none print:pb-0">
             
-            {/* --- TAB: SCRIPT BREAKER --- */}
-            {viewMode === 'breaker' && aiEnabled && (
-              <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
-                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-zinc-800 pb-4">
-                  <div>
-                    <h2 className="text-xl md:text-2xl font-black uppercase tracking-tighter text-purple-500 flex items-center gap-2"><Scissors size={24} /> The Script Breaker</h2>
-                    <p className="text-[10px] text-zinc-400 mt-1 uppercase tracking-widest">Paste a screenplay. We'll slice it into chunks so the AI doesn't choke.</p>
-                  </div>
-                  {scriptChunks.length > 0 && (
-                    <button onClick={() => { setScriptChunks([]); setRawImportScript(''); }} className="px-4 py-2 bg-zinc-800 hover:bg-red-500/20 text-zinc-400 hover:text-red-400 rounded-full text-[10px] font-black transition-colors">START OVER</button>
-                  )}
-                </div>
-
-                {scriptChunks.length === 0 ? (
-                  <div className="bg-zinc-900/40 border border-zinc-800 rounded-[2rem] p-6 md:p-8 shadow-inner">
-                    <textarea 
-                      value={rawImportScript} 
-                      onChange={(e) => setRawImportScript(e.target.value)} 
-                      placeholder="Paste your script text here... Ensure scenes start with standard headings like INT. LOCATION - DAY or EXT. LOCATION - NIGHT." 
-                      className="w-full bg-zinc-950/80 rounded-2xl p-4 md:p-6 text-sm font-mono text-zinc-300 min-h-[40vh] focus:outline-none border border-zinc-800/50 resize-y whitespace-pre-wrap"
-                    />
-                    <div className="mt-4 flex justify-end">
-                      <button onClick={parseScriptIntoChunks} disabled={!rawImportScript.trim()} className="px-6 py-3 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white font-black text-xs rounded-full tracking-widest shadow-lg shadow-purple-900/20 transition-all flex items-center gap-2">
-                        <Scissors size={14}/> SLICE INTO SCENES
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    <div className="bg-purple-500/10 border border-purple-500/30 rounded-2xl p-4 flex items-center justify-between text-purple-400">
-                      <span className="text-xs font-bold">Successfully sliced into {scriptChunks.length} scenes.</span>
-                      <span className="text-[10px] uppercase tracking-widest font-black">Process them one by one.</span>
-                    </div>
-                    
-                    <div className="grid grid-cols-1 gap-4">
-                      {scriptChunks.map((chunk, idx) => (
-                        <div key={chunk.id} className={`p-5 rounded-[1.5rem] border transition-all ${chunk.status === 'done' ? 'bg-green-900/10 border-green-900/30' : chunk.status === 'error' ? 'bg-red-900/10 border-red-900/30' : 'bg-zinc-900/40 border-zinc-800'}`}>
-                          <div className="flex flex-col sm:flex-row justify-between sm:items-start gap-4">
-                            <div className="flex-1 min-w-0">
-                              <h4 className="text-sm font-black uppercase text-zinc-200 mb-1 truncate">{chunk.heading}</h4>
-                              <p className="text-xs text-zinc-500 line-clamp-2 font-mono">{chunk.text.substring(chunk.heading.length).trim()}</p>
-                            </div>
-                            <div className="shrink-0">
-                              {chunk.status === 'done' ? (
-                                <span className="flex items-center gap-1 text-[10px] font-black text-green-500 bg-green-500/10 px-3 py-1.5 rounded-full"><CheckCircle2 size={14}/> PROCESSED</span>
-                              ) : chunk.status === 'processing' ? (
-                                <span className="flex items-center gap-2 text-[10px] font-black text-purple-400 bg-purple-500/10 px-4 py-1.5 rounded-full"><Loader2 size={14} className="animate-spin"/> BREAKING DOWN...</span>
-                              ) : (
-                                <button onClick={() => processScriptChunk(idx)} disabled={isAIBusy || !isRealUser} className="w-full sm:w-auto flex items-center justify-center gap-1 text-[10px] font-black bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-full disabled:opacity-50 transition-colors shadow-lg">
-                                  {!isRealUser ? <Lock size={12}/> : <Wand2 size={12}/>} EXTRACT SHOTS
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
             {/* --- TAB: SCENE CONFIG --- */}
             {viewMode === 'scene' && (
               <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-300">
@@ -1543,7 +1424,7 @@ const App = () => {
                 {/* THE PREMISE SEED */}
                 <div className="space-y-2 bg-zinc-900/40 p-6 md:p-8 rounded-[2.5rem] border border-zinc-800/50 shadow-inner">
                   <label className="text-[10px] font-black text-orange-500 uppercase tracking-widest flex items-center justify-between mb-2">
-                    <span className="flex items-center gap-2"><div className="w-1.5 h-1.5 bg-orange-500 rounded-full" /> The Premise (Idea)</span>
+                    <span className="flex items-center gap-2"><div className="w-1.5 h-1.5 bg-orange-500 rounded-full" /> The Premise / Logline</span>
                     <div className="flex items-center gap-1.5">
                       {history[`sketch-premise`] !== undefined && (
                         <button onClick={() => revertSketchField('premise')} className="p-1.5 hover:bg-zinc-800 rounded transition-colors text-zinc-500 hover:text-zinc-300" title="Undo AI edit"><Undo size={12}/></button>
@@ -1558,65 +1439,96 @@ const App = () => {
                   <textarea value={activeSketch?.premise || ''} onChange={(e) => updateSketch(activeSketchId, 'premise', e.target.value)} placeholder="Describe the basic concept here to act as a seed for the AI... (e.g. A guy attends a deeply serious funeral but gets stuck in his mascot uniform.)" className="w-full bg-zinc-950/50 border border-zinc-800/80 rounded-xl p-4 md:p-6 text-sm focus:outline-none focus:border-orange-500/50 min-h-[100px] resize-y text-zinc-200" />
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
-                  {['hook', 'escalation', 'ending'].map((beat) => (
-                    <div key={beat} className="space-y-2 bg-zinc-900/30 p-5 rounded-[2rem] border border-zinc-800/50">
-                      <label className="text-[10px] font-black text-orange-500 uppercase tracking-widest flex items-center justify-between mb-2">
-                        <span className="flex items-center gap-2"><div className="w-1.5 h-1.5 bg-orange-500 rounded-full" /> The {beat}</span>
-                        <div className="flex items-center gap-1">
-                          {history[`sketch-${beat}`] !== undefined && (
-                            <button onClick={() => revertSketchField(beat)} className="p-1.5 hover:bg-zinc-800 rounded transition-colors text-zinc-500 hover:text-zinc-300" title="Undo AI edit"><Undo size={12}/></button>
-                          )}
-                          {aiEnabled && (
-                            <button onClick={() => generateNarrativeBeat(beat)} disabled={!isRealUser || isAIBusy} className="p-1.5 hover:bg-orange-500/20 rounded transition-colors disabled:opacity-50">{!isRealUser ? <Lock size={12} className="text-orange-500" /> : <Sparkles size={12} className="text-orange-500" />}</button>
-                          )}
-                        </div>
-                      </label>
-                      <textarea value={activeSketch?.[beat] || ''} onChange={(e) => updateSketch(activeSketchId, beat, e.target.value)} className="w-full bg-zinc-950/50 border border-zinc-800 rounded-xl p-4 text-sm focus:outline-none focus:border-orange-500/50 min-h-[120px] resize-none text-zinc-300" />
-                    </div>
-                  ))}
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 bg-zinc-900/20 p-6 md:p-8 rounded-[2.5rem] border border-zinc-800 shadow-inner">
-                  <div className="space-y-2 sm:col-span-2 lg:col-span-5">
-                    <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Primary Scene Heading</span>
-                    <div className="flex flex-col sm:flex-row bg-zinc-950/50 rounded-xl border border-zinc-800 focus-within:border-orange-500/50 overflow-hidden shadow-inner">
-                      <select value={activeSketch?.settingType || 'INT.'} onChange={(e) => updateSketch(activeSketchId, 'settingType', e.target.value)} className="bg-zinc-900 border-b sm:border-b-0 sm:border-r border-zinc-800 text-sm font-bold text-orange-500 p-3 focus:outline-none cursor-pointer text-center sm:w-24">
-                        <option>INT.</option><option>EXT.</option><option>I/E.</option>
-                      </select>
-                      <input value={activeSketch?.location !== undefined ? activeSketch.location : (activeSketch?.sceneType || '')} onChange={(e) => updateSketch(activeSketchId, 'location', e.target.value)} placeholder="LOCATION..." className="flex-1 bg-transparent text-sm font-black p-3 focus:outline-none uppercase w-full text-zinc-200" />
-                      <span className="text-zinc-700 font-black p-3 select-none hidden sm:block">-</span>
-                      <select value={activeSketch?.timeOfDay || 'DAY'} onChange={(e) => updateSketch(activeSketchId, 'timeOfDay', e.target.value)} className="bg-zinc-900 border-t sm:border-t-0 sm:border-l border-zinc-800 text-sm font-bold text-blue-500 p-3 focus:outline-none cursor-pointer text-center sm:w-28">
-                        <option>DAY</option><option>NIGHT</option><option>DAWN</option><option>DUSK</option><option>CONT.</option>
-                      </select>
-                    </div>
+                {/* AESTHETICS & PROPS ROW */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div className="space-y-2 bg-zinc-900/20 p-5 rounded-[2rem] border border-zinc-800">
+                    <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest flex items-center gap-1"><Film size={12}/> Genre</span>
+                    <select value={activeSketch?.genre || 'Comedy'} onChange={(e) => updateSketch(activeSketchId, 'genre', e.target.value)} className="w-full bg-zinc-950/50 border border-zinc-800 rounded-xl p-3 text-sm focus:outline-none font-bold cursor-pointer text-zinc-300">
+                      {GENRES.map(g => <option key={g} value={g}>{g}</option>)}
+                    </select>
                   </div>
-                  <div className="space-y-2">
+                  <div className="space-y-2 bg-zinc-900/20 p-5 rounded-[2rem] border border-zinc-800">
                     <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest flex items-center gap-1"><VenetianMask size={12}/> Tone</span>
-                    <select value={TONES.includes(activeSketch?.tone) ? activeSketch?.tone : 'Other'} onChange={(e) => updateSketch(activeSketchId, 'tone', e.target.value)} className="w-full bg-zinc-950/50 border border-zinc-800 rounded-xl p-3 text-sm focus:outline-none font-bold cursor-pointer text-purple-400 [&>option]:bg-zinc-900">
+                    <select value={TONES.includes(activeSketch?.tone) ? activeSketch?.tone : 'Other'} onChange={(e) => updateSketch(activeSketchId, 'tone', e.target.value)} className="w-full bg-zinc-950/50 border border-zinc-800 rounded-xl p-3 text-sm focus:outline-none font-bold cursor-pointer text-purple-400">
                       {TONES.map(t => <option key={t} value={t}>{t}</option>)}
                     </select>
-                    {activeSketch?.tone === 'Other' || (!TONES.includes(activeSketch?.tone) && activeSketch?.tone) ? (
-                      <input value={activeSketch?.tone === 'Other' ? '' : activeSketch?.tone} onChange={(e) => updateSketch(activeSketchId, 'tone', e.target.value)} placeholder="Type custom tone..." className="w-full bg-zinc-950/50 border border-zinc-800 rounded-xl p-3 text-sm focus:outline-none font-bold text-purple-400 mt-2 shadow-inner" />
-                    ) : null}
                   </div>
-                  <div className="space-y-2">
+                  <div className="space-y-2 bg-zinc-900/20 p-5 rounded-[2rem] border border-zinc-800">
                     <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest flex items-center gap-1"><ImageIcon size={12}/> Art Style</span>
-                    <select value={activeSketch?.imageStyle || 'Pencil Sketch'} onChange={(e) => updateSketch(activeSketchId, 'imageStyle', e.target.value)} className="w-full bg-zinc-950/50 border border-zinc-800 rounded-xl p-3 text-sm focus:outline-none font-bold cursor-pointer text-blue-400 [&>option]:bg-zinc-900">
+                    <select value={activeSketch?.imageStyle || 'Pencil Sketch'} onChange={(e) => updateSketch(activeSketchId, 'imageStyle', e.target.value)} className="w-full bg-zinc-950/50 border border-zinc-800 rounded-xl p-3 text-sm focus:outline-none font-bold cursor-pointer text-blue-400">
                       {IMAGE_STYLES.map(s => <option key={s} value={s}>{s}</option>)}
                     </select>
                   </div>
-                  <div className="space-y-2">
+                  <div className="space-y-2 bg-zinc-900/20 p-5 rounded-[2rem] border border-zinc-800">
                     <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest flex items-center gap-1"><Layout size={12}/> Ratio</span>
-                    <select value={activeSketch?.aspectRatio || '16:9'} onChange={(e) => updateSketch(activeSketchId, 'aspectRatio', e.target.value)} className="w-full bg-zinc-950/50 border border-zinc-800 rounded-xl p-3 text-sm focus:outline-none font-bold cursor-pointer text-zinc-300 [&>option]:bg-zinc-900">
+                    <select value={activeSketch?.aspectRatio || '16:9'} onChange={(e) => updateSketch(activeSketchId, 'aspectRatio', e.target.value)} className="w-full bg-zinc-950/50 border border-zinc-800 rounded-xl p-3 text-sm focus:outline-none font-bold cursor-pointer text-zinc-300">
                       {ASPECT_RATIOS.map(s => <option key={s.val} value={s.val}>{s.label}</option>)}
                     </select>
                   </div>
-                  <div className="space-y-2 sm:col-span-2">
-                    <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Key Props</span>
-                    <input value={activeSketch?.props || ''} onChange={(e) => updateSketch(activeSketchId, 'props', e.target.value)} placeholder="Mustard, Casket..." className="w-full bg-zinc-950/50 border border-zinc-800 rounded-xl p-3 text-sm focus:outline-none font-bold italic h-[46px] text-zinc-300" />
+                </div>
+
+                {/* MASTER PROPS LIST */}
+                <div className="bg-zinc-900/20 p-6 md:p-8 rounded-[2.5rem] border border-zinc-800 shadow-inner">
+                  <div className="flex items-center justify-between mb-4">
+                    <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Master Props List</span>
+                    {aiEnabled && (
+                      <button onClick={autoExtractProps} disabled={!isRealUser || isAIBusy} className="text-[9px] font-black tracking-widest px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white rounded flex items-center gap-1 transition-colors disabled:opacity-50">
+                        {loadingStates.extractProps ? <Loader2 size={12} className="animate-spin"/> : <Sparkles size={12}/>} AUTO-EXTRACT FROM SCRIPT
+                      </button>
+                    )}
+                  </div>
+                  
+                  <div className="flex flex-wrap gap-2 mb-4">
+                    {activePropsList.map((prop, idx) => (
+                      <div key={idx} className="bg-zinc-950 border border-zinc-700 px-3 py-1.5 rounded-lg flex items-center gap-2 text-sm font-bold text-zinc-300">
+                        {prop}
+                        <button onClick={() => removeProp(idx)} className="text-zinc-600 hover:text-red-400 p-0.5"><X size={12}/></button>
+                      </div>
+                    ))}
+                    {activePropsList.length === 0 && <span className="text-xs text-zinc-600 italic py-1.5">No props added yet.</span>}
+                  </div>
+                  
+                  <div className="relative">
+                    <input 
+                      value={newPropInput} 
+                      onChange={(e) => setNewPropInput(e.target.value)} 
+                      onKeyDown={handleAddProp}
+                      placeholder="Type a prop and press Enter..." 
+                      className="w-full bg-zinc-950/50 border border-zinc-800 rounded-xl p-3 text-sm focus:outline-none focus:border-zinc-500 text-zinc-300" 
+                    />
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2 text-[9px] font-black text-zinc-600 border border-zinc-700 px-1.5 py-0.5 rounded pointer-events-none">ENTER</div>
                   </div>
                 </div>
+
+                {/* ADVANCED NARRATIVE BEATS */}
+                <div className="border border-zinc-800 rounded-[2.5rem] overflow-hidden bg-zinc-900/10">
+                  <button 
+                    onClick={() => setShowAdvancedBeats(!showAdvancedBeats)} 
+                    className="w-full p-6 flex justify-between items-center text-sm font-black uppercase tracking-widest text-zinc-400 hover:text-zinc-200 transition-colors"
+                  >
+                    Advanced Narrative Beats
+                    {showAdvancedBeats ? <ChevronUp size={16}/> : <ChevronDown size={16}/>}
+                  </button>
+                  
+                  {showAdvancedBeats && (
+                    <div className="p-6 pt-0 grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6 border-t border-zinc-800/50 mt-2 pt-6">
+                      {['hook', 'escalation', 'ending'].map((beat) => (
+                        <div key={beat} className="space-y-2 bg-zinc-900/30 p-5 rounded-[2rem] border border-zinc-800/50">
+                          <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest flex items-center justify-between mb-2">
+                            <span>The {beat}</span>
+                            {aiEnabled && (
+                              <button onClick={() => generateNarrativeBeat(beat)} disabled={!isRealUser || isAIBusy} className="p-1 hover:bg-zinc-800 rounded transition-colors disabled:opacity-50 text-zinc-500 hover:text-white">
+                                {loadingStates[beat] ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+                              </button>
+                            )}
+                          </label>
+                          <textarea value={activeSketch?.[beat] || ''} onChange={(e) => updateSketch(activeSketchId, beat, e.target.value)} className="w-full bg-zinc-950/50 border border-zinc-800 rounded-xl p-4 text-sm focus:outline-none focus:border-zinc-500 min-h-[100px] resize-none text-zinc-300" />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
               </div>
             )}
 
@@ -1723,321 +1635,504 @@ const App = () => {
             {/* --- TAB: SCRIPT --- */}
             {viewMode === 'script' && (
               <div className="animate-in fade-in slide-in-from-bottom-4 duration-300 space-y-6">
+                
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-zinc-800 pb-4">
-                  <h2 className="text-xl md:text-2xl font-black uppercase tracking-tighter text-blue-400 flex items-center gap-2"><ScrollText size={24} /> Generated Script</h2>
-                  <div className="flex gap-2 w-full sm:w-auto">
+                  <div className="flex bg-zinc-900 rounded-full p-1 border border-zinc-800">
+                    <button onClick={() => setScriptSubTab('editor')} className={`px-4 py-1.5 rounded-full text-xs font-black transition-colors ${scriptSubTab === 'editor' ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20' : 'text-zinc-500 hover:text-zinc-300'}`}>MANUAL SCRIPT</button>
                     {aiEnabled && (
-                      <button onClick={generateScript} disabled={!isRealUser || isAIBusy} className="flex-1 sm:flex-none justify-center flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded-full text-xs font-black shadow-lg shadow-blue-900/20 whitespace-nowrap">
-                        {loadingStates.script ? <Loader2 size={14} className="animate-spin" /> : (!isRealUser ? <Lock size={14} /> : <Sparkles size={14} />)} WRITE SCRIPT
-                      </button>
+                      <button onClick={() => setScriptSubTab('breaker')} className={`px-4 py-1.5 rounded-full text-xs font-black transition-colors flex items-center gap-1.5 ${scriptSubTab === 'breaker' ? 'bg-purple-600 text-white shadow-lg shadow-purple-900/20' : 'text-zinc-500 hover:text-zinc-300'}`}><Scissors size={12}/> AI SCRIPT BREAKER</button>
                     )}
-                    <button onClick={downloadScript} disabled={!activeSketch?.script} className="flex-1 sm:flex-none justify-center flex items-center gap-2 px-4 py-2.5 bg-zinc-800 text-blue-400 hover:bg-zinc-700 disabled:opacity-50 rounded-full text-xs font-black transition-all border border-zinc-700"><Download size={14} /> SAVE PDF</button>
                   </div>
+                  
+                  {scriptSubTab === 'editor' && (
+                    <div className="flex gap-2 w-full sm:w-auto">
+                      {aiEnabled && (
+                        <button onClick={generateScript} disabled={!isRealUser || isAIBusy} className="flex-1 sm:flex-none justify-center flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded-full text-xs font-black shadow-lg shadow-blue-900/20 whitespace-nowrap">
+                          {loadingStates.script ? <Loader2 size={14} className="animate-spin" /> : (!isRealUser ? <Lock size={14} /> : <Sparkles size={14} />)} GENERATE SCRIPT
+                        </button>
+                      )}
+                      <button onClick={downloadScript} disabled={!activeSketch?.script} className="flex-1 sm:flex-none justify-center flex items-center gap-2 px-4 py-2.5 bg-zinc-800 text-blue-400 hover:bg-zinc-700 disabled:opacity-50 rounded-full text-xs font-black transition-all border border-zinc-700"><Download size={14} /> SAVE PDF</button>
+                    </div>
+                  )}
                 </div>
-                <div className="bg-zinc-900/40 border border-zinc-800 rounded-[2rem] md:rounded-[3rem] p-6 md:p-10 relative shadow-xl">
-                  <textarea value={activeSketch?.script || ''} onChange={(e) => updateSketch(activeSketchId, 'script', e.target.value)} className="w-full bg-zinc-950/80 rounded-2xl p-4 md:p-8 text-xs md:text-sm font-mono text-zinc-300 min-h-[70vh] focus:outline-none border border-zinc-800/50 resize-y leading-relaxed whitespace-pre-wrap shadow-inner" placeholder="Generate a script from your storyboard, or type manually..." />
-                </div>
+
+                {scriptSubTab === 'editor' && (
+                  <div className="bg-zinc-900/40 border border-zinc-800 rounded-[2rem] md:rounded-[3rem] p-6 md:p-10 relative shadow-xl">
+                    <textarea value={activeSketch?.script || ''} onChange={(e) => updateSketch(activeSketchId, 'script', e.target.value)} className="w-full bg-zinc-950/80 rounded-2xl p-4 md:p-8 text-xs md:text-sm font-mono text-zinc-300 min-h-[70vh] focus:outline-none border border-zinc-800/50 resize-y leading-relaxed whitespace-pre-wrap shadow-inner" placeholder="Generate a script from your storyboard, or type manually..." />
+                  </div>
+                )}
+
+                {scriptSubTab === 'breaker' && aiEnabled && (
+                  <div className="space-y-6">
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                      <div>
+                        <h2 className="text-xl md:text-2xl font-black uppercase tracking-tighter text-purple-500 flex items-center gap-2"><Scissors size={24} /> The Script Breaker</h2>
+                        <p className="text-[10px] text-zinc-400 mt-1 uppercase tracking-widest">Paste a screenplay. Let the AI digest it and build your board.</p>
+                      </div>
+                      {scriptChunks.length > 0 && (
+                        <button onClick={() => { setScriptChunks([]); setRawImportScript(''); }} className="px-4 py-2 bg-zinc-800 hover:bg-red-500/20 text-zinc-400 hover:text-red-400 rounded-full text-[10px] font-black transition-colors">START OVER</button>
+                      )}
+                    </div>
+
+                    {scriptChunks.length === 0 ? (
+                      <div className="bg-zinc-900/40 border border-zinc-800 rounded-[2rem] p-6 md:p-8 shadow-inner">
+                        <textarea 
+                          value={rawImportScript} 
+                          onChange={(e) => setRawImportScript(e.target.value)} 
+                          placeholder="Paste your script text here... Ensure scenes start with standard headings like INT. LOCATION - DAY or EXT. LOCATION - NIGHT." 
+                          className="w-full bg-zinc-950/80 rounded-2xl p-4 md:p-6 text-sm font-mono text-zinc-300 min-h-[40vh] focus:outline-none border border-zinc-800/50 resize-y whitespace-pre-wrap"
+                        />
+                        <div className="mt-4 flex flex-col sm:flex-row justify-end gap-3">
+                          <button onClick={analyzeScriptMetadata} disabled={!rawImportScript.trim() || !isRealUser || isAIBusy} className="px-6 py-3 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 text-purple-400 font-black text-[10px] rounded-full tracking-widest transition-all flex items-center justify-center gap-2">
+                            {loadingStates.analyzeScript ? <Loader2 size={14} className="animate-spin"/> : <Sparkles size={14}/>} 1. ANALYZE PROJECT METADATA
+                          </button>
+                          <button onClick={parseScriptIntoChunks} disabled={!rawImportScript.trim()} className="px-6 py-3 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white font-black text-xs rounded-full tracking-widest shadow-lg shadow-purple-900/20 transition-all flex items-center justify-center gap-2">
+                            <Scissors size={14}/> 2. SLICE INTO SCENES
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        <div className="bg-purple-500/10 border border-purple-500/30 rounded-2xl p-4 flex items-center justify-between text-purple-400">
+                          <span className="text-xs font-bold">Successfully sliced into {scriptChunks.length} scenes.</span>
+                          <span className="text-[10px] uppercase tracking-widest font-black">Process them one by one.</span>
+                        </div>
+                        
+                        <div className="grid grid-cols-1 gap-4">
+                          {scriptChunks.map((chunk, idx) => (
+                            <div key={chunk.id} className={`p-5 rounded-[1.5rem] border transition-all ${chunk.status === 'done' ? 'bg-green-900/10 border-green-900/30' : chunk.status === 'error' ? 'bg-red-900/10 border-red-900/30' : 'bg-zinc-900/40 border-zinc-800'}`}>
+                              <div className="flex flex-col sm:flex-row justify-between sm:items-start gap-4">
+                                <div className="flex-1 min-w-0">
+                                  <h4 className="text-sm font-black uppercase text-zinc-200 mb-1 truncate">{chunk.heading}</h4>
+                                  <p className="text-xs text-zinc-500 line-clamp-2 font-mono">{chunk.text.substring(chunk.heading.length).trim()}</p>
+                                </div>
+                                <div className="shrink-0">
+                                  {chunk.status === 'done' ? (
+                                    <span className="flex items-center gap-1 text-[10px] font-black text-green-500 bg-green-500/10 px-3 py-1.5 rounded-full"><CheckCircle2 size={14}/> PROCESSED</span>
+                                  ) : chunk.status === 'processing' ? (
+                                    <span className="flex items-center gap-2 text-[10px] font-black text-purple-400 bg-purple-500/10 px-4 py-1.5 rounded-full"><Loader2 size={14} className="animate-spin"/> BREAKING DOWN...</span>
+                                  ) : (
+                                    <button onClick={() => processScriptChunk(idx)} disabled={isAIBusy || !isRealUser} className="w-full sm:w-auto flex items-center justify-center gap-1 text-[10px] font-black bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-full disabled:opacity-50 transition-colors shadow-lg">
+                                      {!isRealUser ? <Lock size={12}/> : <Wand2 size={12}/>} EXTRACT SHOTS
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
-            {/* --- TAB: STORYBOARD (SHOT LIST) --- */}
+            {/* --- TAB: STORYBOARD (SHOT LIST & SUB-VIEWS) --- */}
             {viewMode === 'storyboard' && (
               <div className="animate-in fade-in slide-in-from-bottom-4 duration-300 space-y-6 md:space-y-8">
                 
-                {/* Storyboard Header & AI Actions */}
-                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-zinc-800 pb-4">
-                  <h2 className="text-xl md:text-2xl font-black uppercase tracking-tighter text-zinc-100 flex items-center gap-2"><Layout size={24} /> Shot List</h2>
-                  {aiEnabled && (
+                {/* Storyboard Header & Sub-Nav */}
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-zinc-800 pb-4 print:hidden">
+                  <div className="flex bg-zinc-900 rounded-full p-1 border border-zinc-800 overflow-x-auto w-full sm:w-auto">
+                    <button onClick={() => setBoardSubTab('grid')} className={`px-4 py-1.5 rounded-full text-xs font-black transition-colors whitespace-nowrap flex items-center gap-1.5 ${boardSubTab === 'grid' ? 'bg-zinc-100 text-black shadow-lg' : 'text-zinc-500 hover:text-zinc-300'}`}><Layout size={12}/> VISUAL GRID</button>
+                    <button onClick={() => { if(shootPlan.length > 0) setBoardSubTab('shoot-plan'); else optimizeShootOrder(); }} disabled={!isRealUser && shootPlan.length === 0 || isAIBusy} className={`px-4 py-1.5 rounded-full text-xs font-black transition-colors whitespace-nowrap flex items-center gap-1.5 disabled:opacity-50 ${boardSubTab === 'shoot-plan' ? 'bg-yellow-500 text-black shadow-lg' : 'text-zinc-500 hover:text-zinc-300'}`}>
+                      {loadingStates.optimizing ? <Loader2 size={12} className="animate-spin" /> : <Zap size={12} />} 1ST AD PLAN
+                    </button>
+                    <div className="w-px h-4 bg-zinc-700 mx-1 my-auto"></div>
+                    <button onClick={() => setBoardSubTab('print-boards')} className={`px-4 py-1.5 rounded-full text-xs font-black transition-colors whitespace-nowrap flex items-center gap-1.5 ${boardSubTab === 'print-boards' ? 'bg-zinc-700 text-white shadow-inner' : 'text-zinc-500 hover:text-zinc-300'}`}><Printer size={12}/> BOARDS</button>
+                    <button onClick={() => setBoardSubTab('print-list')} className={`px-4 py-1.5 rounded-full text-xs font-black transition-colors whitespace-nowrap flex items-center gap-1.5 ${boardSubTab === 'print-list' ? 'bg-zinc-700 text-white shadow-inner' : 'text-zinc-500 hover:text-zinc-300'}`}><ListVideo size={12}/> LIST</button>
+                  </div>
+                  
+                  {boardSubTab === 'grid' && aiEnabled && (
                     <button onClick={generateAISHots} disabled={!isRealUser || isAIBusy} className="w-full sm:w-auto flex justify-center flex items-center gap-2 px-6 py-2.5 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 rounded-full text-xs font-black shadow-lg shadow-purple-900/20 whitespace-nowrap">
                       {loadingStates.genShots ? <Loader2 size={14} className="animate-spin" /> : (!isRealUser ? <Lock size={14} /> : <Sparkles size={14} />)} BUILD 8-SHOT SEQUENCE
                     </button>
                   )}
+                  {boardSubTab === 'shoot-plan' && (
+                    <div className="flex gap-2 w-full sm:w-auto">
+                      <button onClick={optimizeShootOrder} disabled={!isRealUser || isAIBusy} className="flex-1 sm:flex-none justify-center items-center gap-2 px-4 py-2 bg-yellow-500/10 text-yellow-500 hover:bg-yellow-500/20 border border-yellow-500/30 rounded-full text-[10px] font-black transition-all flex">
+                        {loadingStates.optimizing ? <Loader2 size={12} className="animate-spin" /> : <RefreshCcw size={12} />} REASSESS
+                      </button>
+                      <button onClick={downloadShootPlan} className="flex-1 sm:flex-none justify-center items-center gap-2 px-4 py-2 bg-zinc-800 text-yellow-500 hover:bg-zinc-700 border border-zinc-700 rounded-full text-[10px] font-black transition-all flex"><Download size={12} /> SAVE TXT</button>
+                    </div>
+                  )}
                 </div>
 
-                {activeShots.length === 0 && (
-                  <div className="py-16 text-center border-2 border-dashed border-zinc-800 rounded-[3rem] text-zinc-600 flex flex-col items-center gap-4">
-                    <Camera size={48} className="opacity-30"/>
-                    <p className="text-sm font-bold uppercase tracking-widest">The board is empty.<br/>Add a shot manually or use the AI builder.</p>
-                  </div>
-                )}
-
-                {activeShots.map((shot, index) => {
-                  const currentPrompt = getShotPrompt(shot);
-                  const isPersonalKeyActive = userApiKey.trim().length > 0;
-                  // Identify if this shot starts a new scene visually
-                  const isNewScene = index === 0 || shot.sceneHeading !== activeShots[index - 1].sceneHeading;
-                  
-                  return (
-                  <React.Fragment key={shot.id}>
-                    {isNewScene && (
-                       <div className="flex items-center gap-4 py-4 mt-8">
-                         <div className="h-px bg-zinc-800 flex-1"></div>
-                         <div className="text-sm font-black uppercase tracking-widest text-orange-500 bg-orange-500/10 px-4 py-2 rounded-full border border-orange-500/20 flex items-center gap-2">
-                            <Clapperboard size={16}/> {shot.sceneHeading}
-                         </div>
-                         <div className="h-px bg-zinc-800 flex-1"></div>
-                       </div>
+                {/* VISUAL GRID VIEW */}
+                {boardSubTab === 'grid' && (
+                  <div className="space-y-4">
+                    {activeShots.length === 0 && (
+                      <div className="py-16 text-center border-2 border-dashed border-zinc-800 rounded-[3rem] text-zinc-600 flex flex-col items-center gap-4">
+                        <Camera size={48} className="opacity-30"/>
+                        <p className="text-sm font-bold uppercase tracking-widest">The board is empty.<br/>Add a shot manually or use the AI builder.</p>
+                      </div>
                     )}
-                    
-                    <div className={`group bg-zinc-900/40 border ${shot.fx ? 'border-orange-500/40' : 'border-zinc-800'} rounded-[2rem] md:rounded-[3rem] p-5 md:p-10 hover:bg-zinc-900/60 transition-all relative overflow-hidden mt-4`}>
+
+                    {activeShots.map((shot, index) => {
+                      const currentPrompt = getShotPrompt(shot);
+                      const isPersonalKeyActive = userApiKey.trim().length > 0;
+                      // Identify if this shot starts a new scene visually
+                      const isNewScene = index === 0 || shot.sceneHeading !== activeShots[index - 1].sceneHeading;
                       
-                      <div className="absolute top-0 right-0 p-4 md:p-6 text-6xl md:text-9xl text-zinc-800/20 font-black pointer-events-none select-none z-0">{index + 1}</div>
-                      
-                      {/* TRASH ICON - MOVED TO TOP RIGHT */}
-                      <button onClick={() => deleteShot(shot.id)} className="absolute top-4 right-4 md:top-6 md:right-6 p-2 text-zinc-600 hover:text-red-400 bg-zinc-950/80 rounded-full border border-zinc-800 hover:border-red-500/50 transition-all z-20 shadow-lg"><Trash2 size={16} /></button>
-                      
-                      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-10 relative z-10 w-full mt-8 md:mt-0">
-                        <div className="lg:col-span-4 space-y-4 w-full">
+                      return (
+                      <React.Fragment key={shot.id}>
+                        {isNewScene && (
+                           <div className="flex items-center gap-4 py-4 mt-8">
+                             <div className="h-px bg-zinc-800 flex-1"></div>
+                             <div className="text-sm font-black uppercase tracking-widest text-orange-500 bg-orange-500/10 px-4 py-2 rounded-full border border-orange-500/20 flex items-center gap-2">
+                                <Clapperboard size={16}/> {shot.sceneHeading}
+                             </div>
+                             <div className="h-px bg-zinc-800 flex-1"></div>
+                           </div>
+                        )}
+                        
+                        <div className={`group bg-zinc-900/40 border ${shot.fx ? 'border-orange-500/40' : 'border-zinc-800'} rounded-[2rem] md:rounded-[3rem] p-5 md:p-10 hover:bg-zinc-900/60 transition-all relative overflow-hidden mt-4`}>
                           
-                          {/* DYNAMIC ASPECT RATIO CONTAINER */}
-                          <div 
-                            className="bg-zinc-950 rounded-[1.5rem] border border-zinc-800 overflow-hidden relative group/img flex items-center justify-center mx-auto"
-                            style={{ aspectRatio: (activeSketch?.aspectRatio || '16:9').replace(':', '/') }}
-                          >
-                            {shot.image ? (
-                              <><img src={shot.image} alt="Storyboard" className="w-full h-full object-cover" />
-                                <div className="absolute top-3 right-3 flex gap-2 opacity-100 md:opacity-0 md:group-hover/img:opacity-100 transition-opacity">
-                                  <button onClick={() => setZoomedImage(shot.image)} className="p-2 bg-black/60 hover:bg-black/80 rounded-full text-white shadow-lg"><Maximize2 size={14} /></button>
-                                  <button onClick={() => downloadImage(shot.id, shot.number)} className="p-2 bg-black/60 hover:bg-black/80 rounded-full text-white shadow-lg"><Download size={14} /></button>
-                                  <button onClick={() => updateShot(shot.id, 'image', null)} className="p-2 bg-red-500/80 hover:bg-red-500 rounded-full text-white shadow-lg"><X size={14} /></button>
-                                </div>
-                              </>
-                            ) : (
-                              <div className="text-center p-4 md:p-6 w-full">
-                                {visiblePromptId === shot.id ? (
-                                  <div className="bg-zinc-900 border border-zinc-700 p-3 rounded-xl text-left relative animate-in fade-in zoom-in-95 duration-200 shadow-xl flex flex-col h-full justify-between">
-                                    <div>
-                                      <button onClick={() => setVisiblePromptId(null)} className="absolute top-2 right-2 p-1 text-zinc-500 hover:text-white bg-zinc-800 rounded-full"><X size={10} /></button>
-                                      <p className="text-[9px] text-zinc-400 mb-2 font-mono pr-4 h-20 overflow-y-auto leading-relaxed select-all">
-                                        {currentPrompt}
-                                      </p>
+                          <div className="absolute top-0 right-0 p-4 md:p-6 text-6xl md:text-9xl text-zinc-800/20 font-black pointer-events-none select-none z-0">{index + 1}</div>
+                          
+                          <button onClick={() => deleteShot(shot.id)} className="absolute top-4 right-4 md:top-6 md:right-6 p-2 text-zinc-600 hover:text-red-400 bg-zinc-950/80 rounded-full border border-zinc-800 hover:border-red-500/50 transition-all z-20 shadow-lg"><Trash2 size={16} /></button>
+                          
+                          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-10 relative z-10 w-full mt-8 md:mt-0">
+                            <div className="lg:col-span-4 space-y-4 w-full">
+                              
+                              {/* DYNAMIC ASPECT RATIO CONTAINER */}
+                              <div className="bg-zinc-950 rounded-[1.5rem] border border-zinc-800 overflow-hidden relative group/img flex items-center justify-center mx-auto" style={{ aspectRatio: (activeSketch?.aspectRatio || '16:9').replace(':', '/') }}>
+                                {shot.image ? (
+                                  <><img src={shot.image} alt="Storyboard" className="w-full h-full object-cover" />
+                                    <div className="absolute top-3 right-3 flex gap-2 opacity-100 md:opacity-0 md:group-hover/img:opacity-100 transition-opacity">
+                                      <button onClick={() => setZoomedImage(shot.image)} className="p-2 bg-black/60 hover:bg-black/80 rounded-full text-white shadow-lg"><Maximize2 size={14} /></button>
+                                      <button onClick={() => downloadImage(shot.id, shot.number)} className="p-2 bg-black/60 hover:bg-black/80 rounded-full text-white shadow-lg"><Download size={14} /></button>
+                                      <button onClick={() => updateShot(shot.id, 'image', null)} className="p-2 bg-red-500/80 hover:bg-red-500 rounded-full text-white shadow-lg"><X size={14} /></button>
                                     </div>
-                                    <button onClick={() => copyPrompt(currentPrompt)} className="w-full bg-purple-600 hover:bg-purple-500 text-white text-[9px] font-black py-2 rounded flex items-center justify-center gap-1 transition-colors"><Copy size={10} /> COPY PROMPT</button>
-                                  </div>
+                                  </>
                                 ) : (
-                                  <div className="flex flex-col items-center gap-3">
-                                    <ImageIcon className="text-zinc-800 mx-auto" size={32} />
-                                    <label className="text-[10px] font-black text-zinc-500 hover:text-orange-400 border border-zinc-800 hover:border-orange-500/50 hover:bg-orange-500/10 px-4 py-2 rounded-full flex items-center gap-2 cursor-pointer transition-all">
-                                      <Upload size={10} /> UPLOAD
-                                      <input type="file" accept="image/*" className="hidden" onChange={(e) => handleImageUpload(shot.id, e)} />
-                                    </label>
-                                    {aiEnabled && (
-                                      <div className="flex gap-2">
-                                        <button onClick={() => setVisiblePromptId(shot.id)} className="text-[9px] font-black text-zinc-600 hover:text-purple-400 flex items-center gap-1 transition-colors uppercase tracking-widest bg-zinc-900 px-3 py-1.5 rounded border border-zinc-800">
-                                          <FileText size={10} /> PROMPT
-                                        </button>
-                                        <button 
-                                          onClick={() => generateImage(shot.id)} 
-                                          disabled={!isPersonalKeyActive || loadingStates[`image-${shot.id}`] || isAIBusy}
-                                          className={`text-[9px] font-black flex items-center gap-1 transition-colors uppercase tracking-widest px-3 py-1.5 rounded border ${isPersonalKeyActive ? 'text-zinc-300 bg-purple-600/20 border-purple-500/30 hover:bg-purple-600 hover:text-white' : 'text-zinc-600 bg-zinc-900 border-zinc-800 opacity-50'}`}
-                                          title={!isPersonalKeyActive ? "Requires personal API Key in sidebar" : "Generate Image"}
-                                        >
-                                          {loadingStates[`image-${shot.id}`] ? <Loader2 size={10} className="animate-spin text-purple-400" /> : (!isPersonalKeyActive ? <Lock size={10} /> : <Sparkles size={10} />)} 
-                                          GENERATE
-                                        </button>
+                                  <div className="text-center p-4 md:p-6 w-full">
+                                    {visiblePromptId === shot.id ? (
+                                      <div className="bg-zinc-900 border border-zinc-700 p-3 rounded-xl text-left relative animate-in fade-in zoom-in-95 duration-200 shadow-xl flex flex-col h-full justify-between">
+                                        <div>
+                                          <button onClick={() => setVisiblePromptId(null)} className="absolute top-2 right-2 p-1 text-zinc-500 hover:text-white bg-zinc-800 rounded-full"><X size={10} /></button>
+                                          <p className="text-[9px] text-zinc-400 mb-2 font-mono pr-4 h-20 overflow-y-auto leading-relaxed select-all">{currentPrompt}</p>
+                                        </div>
+                                        <button onClick={() => copyPrompt(currentPrompt)} className="w-full bg-purple-600 hover:bg-purple-500 text-white text-[9px] font-black py-2 rounded flex items-center justify-center gap-1 transition-colors"><Copy size={10} /> COPY PROMPT</button>
+                                      </div>
+                                    ) : (
+                                      <div className="flex flex-col items-center gap-3">
+                                        <ImageIcon className="text-zinc-800 mx-auto" size={32} />
+                                        <label className="text-[10px] font-black text-zinc-500 hover:text-orange-400 border border-zinc-800 hover:border-orange-500/50 hover:bg-orange-500/10 px-4 py-2 rounded-full flex items-center gap-2 cursor-pointer transition-all">
+                                          <Upload size={10} /> UPLOAD
+                                          <input type="file" accept="image/*" className="hidden" onChange={(e) => handleImageUpload(shot.id, e)} />
+                                        </label>
+                                        {aiEnabled && (
+                                          <div className="flex gap-2">
+                                            <button onClick={() => setVisiblePromptId(shot.id)} className="text-[9px] font-black text-zinc-600 hover:text-purple-400 flex items-center gap-1 transition-colors uppercase tracking-widest bg-zinc-900 px-3 py-1.5 rounded border border-zinc-800"><FileText size={10} /> PROMPT</button>
+                                            <button onClick={() => generateImage(shot.id)} disabled={!isPersonalKeyActive || loadingStates[`image-${shot.id}`] || isAIBusy} className={`text-[9px] font-black flex items-center gap-1 transition-colors uppercase tracking-widest px-3 py-1.5 rounded border ${isPersonalKeyActive ? 'text-zinc-300 bg-purple-600/20 border-purple-500/30 hover:bg-purple-600 hover:text-white' : 'text-zinc-600 bg-zinc-900 border-zinc-800 opacity-50'}`} title={!isPersonalKeyActive ? "Requires personal API Key in sidebar" : "Generate Image"}>
+                                              {loadingStates[`image-${shot.id}`] ? <Loader2 size={10} className="animate-spin text-purple-400" /> : (!isPersonalKeyActive ? <Lock size={10} /> : <Sparkles size={10} />)} GENERATE
+                                            </button>
+                                          </div>
+                                        )}
                                       </div>
                                     )}
                                   </div>
                                 )}
                               </div>
-                            )}
-                          </div>
-                          
-                          {/* COLLABORATION BADGE */}
-                          {shot.lastEditedBy && isWritersRoom && (
-                            <div className="mt-2 text-[9px] text-blue-400 italic">Last edit by: {shot.lastEditedBy}</div>
-                          )}
-
-                          <div className="flex flex-col gap-2 w-full mt-4">
-                            <div className="flex items-center bg-zinc-950/50 border border-zinc-800/50 rounded-xl px-3 py-3 md:py-2 w-full focus-within:border-orange-500/50 transition-colors">
-                              <Clapperboard size={12} className="text-orange-500 mr-2 shrink-0" />
-                              <input value={shot.sceneHeading || ''} onChange={(e) => updateShot(shot.id, 'sceneHeading', e.target.value)} placeholder="INT. LOCATION - DAY" className="w-full bg-transparent text-[10px] font-black uppercase text-zinc-300 focus:outline-none min-w-0 tracking-widest" />
-                            </div>
-                            <div className="flex gap-2 w-full">
-                              <select value={shot.type || 'Medium'} onChange={(e) => updateShot(shot.id, 'type', e.target.value)} className="flex-1 w-full bg-zinc-800 border border-zinc-700 rounded-xl p-3 md:p-2.5 text-xs font-bold focus:ring-1 ring-orange-500 appearance-none">{SHOT_TYPES.map(type => <option key={type} value={type}>{type}</option>)}</select>
-                              <button onClick={() => updateShot(shot.id, 'fx', !shot.fx)} className={`px-4 py-3 md:py-2 rounded-xl text-[10px] font-black border ${shot.fx ? 'bg-orange-600 text-white border-orange-400' : 'bg-zinc-800 text-zinc-500 border-zinc-700'}`}>FX</button>
-                            </div>
-                            <div className="flex items-center bg-zinc-950/50 border border-zinc-800/50 rounded-xl px-3 py-3 md:py-2 w-full"><Map size={12} className="text-zinc-500 mr-2 shrink-0" /><input value={shot.locationCaveat || ''} onChange={(e) => updateShot(shot.id, 'locationCaveat', e.target.value)} placeholder="Specific area caveat... (e.g. Corner desk)" className="w-full bg-transparent text-[10px] font-bold text-zinc-400 focus:outline-none min-w-0" /></div>
-                          </div>
-                        </div>
-
-                        <div className="lg:col-span-8 flex flex-col justify-between w-full h-full">
-                          <div className="space-y-6">
-                            <div className="flex flex-col sm:flex-row justify-between sm:items-start gap-4">
-                              <div className="flex-1 space-y-3 w-full">
-                                <input value={shot.subject || ''} onChange={(e) => updateShot(shot.id, 'subject', e.target.value)} placeholder="Subject..." className="w-full bg-transparent text-xl md:text-2xl font-black border-b border-zinc-800 focus:border-orange-500 p-1 focus:outline-none" />
-                                {availableCharacters.length > 0 && (
-                                  <div className="flex flex-wrap gap-2 pt-1">
-                                    <span className="text-[9px] font-black text-zinc-600 uppercase flex items-center h-6 mr-1 shrink-0">In Shot:</span>
-                                    {availableCharacters.map(char => {
-                                      const isActive = (shot.shotCharacters || []).includes(char);
-                                      return (<button key={char} onClick={() => toggleShotCharacter(shot.id, char)} className={`px-3 py-1.5 md:py-1 rounded-full text-[10px] font-bold border transition-all whitespace-nowrap ${isActive ? 'bg-green-500/20 text-green-400 border-green-500/50' : 'bg-zinc-800 text-zinc-500 border-zinc-700'}`}>{char}</button>);
-                                    })}
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                            
-                            <div className="space-y-2 w-full">
-                              <div className="flex items-center gap-2 text-[9px] font-black text-zinc-600 uppercase tracking-widest">
-                                <div className="flex items-center gap-1">
-                                  {history[`shot-${shot.id}-action`] !== undefined && (
-                                    <button onClick={() => revertShotField(shot.id, 'action')} className="p-1 hover:bg-zinc-800 rounded transition-colors text-zinc-500 hover:text-zinc-300" title="Undo AI edit"><Undo size={12}/></button>
-                                  )}
-                                  {aiEnabled && (
-                                    <button onClick={() => generateTextAssist(shot.id, 'action', 'Director blocking physical comedy. Write in screenplay format.', `Describe exactly what we SEE. Focus on specific physical action, props, and facial expressions. Max 1-2 brief sentences.`)} disabled={!isRealUser || isAIBusy} className="p-1 hover:bg-orange-500/20 rounded disabled:opacity-50 shrink-0 text-orange-500">{loadingStates[`action-${shot.id}`] ? <Loader2 size={12} className="animate-spin" /> : (!isRealUser ? <Lock size={12} /> : <Clapperboard size={12} />)}</button>
-                                  )}
-                                </div>
-                                Action / Blocking
-                              </div>
-                              <textarea value={shot.action || ''} onChange={(e) => updateShot(shot.id, 'action', e.target.value)} className="w-full bg-zinc-950/50 rounded-[1.5rem] p-4 text-xs text-zinc-300 min-h-[80px] md:min-h-[60px] focus:outline-none border border-zinc-800/50 focus:border-orange-500/50 resize-y" />
-                            </div>
-
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 w-full">
-                              <div className="space-y-2 w-full">
-                                <div className="flex items-center gap-2 text-[9px] font-black text-zinc-600 uppercase tracking-widest">
-                                  <div className="flex items-center gap-1">
-                                    {history[`shot-${shot.id}-dialogue`] !== undefined && (
-                                      <button onClick={() => revertShotField(shot.id, 'dialogue')} className="p-1 hover:bg-zinc-800 rounded transition-colors text-zinc-500 hover:text-zinc-300" title="Undo AI edit"><Undo size={12}/></button>
-                                    )}
-                                    {aiEnabled && (
-                                      <button onClick={() => generateTextAssist(shot.id, 'dialogue', 'Writer drafting dialogue.', `Write a single punchy line of dialogue, or a brief improv prompt. Max 1-2 sentences. DO NOT write a full script format.`)} disabled={!isRealUser || isAIBusy} className="p-1 hover:bg-purple-500/20 rounded disabled:opacity-50 shrink-0 text-purple-500">{loadingStates[`dialogue-${shot.id}`] ? <Loader2 size={12} className="animate-spin" /> : (!isRealUser ? <Lock size={12} /> : <Quote size={12} />)}</button>
-                                    )}
-                                  </div>
-                                  Dialogue / Improv
-                                </div>
-                                <textarea value={shot.dialogue || ''} onChange={(e) => updateShot(shot.id, 'dialogue', e.target.value)} className="w-full bg-zinc-950/50 rounded-[1.5rem] p-4 text-xs text-zinc-200 min-h-[100px] focus:outline-none border border-zinc-800/50 focus:border-purple-500/50 resize-y" />
-                              </div>
-                              <div className="space-y-2 w-full">
-                                <div className="flex items-center gap-2 text-[9px] font-black text-zinc-600 uppercase tracking-widest">
-                                  <div className="flex items-center gap-1">
-                                    {history[`shot-${shot.id}-notes`] !== undefined && (
-                                      <button onClick={() => revertShotField(shot.id, 'notes')} className="p-1 hover:bg-zinc-800 rounded transition-colors text-zinc-500 hover:text-zinc-300" title="Undo AI edit"><Undo size={12}/></button>
-                                    )}
-                                    {aiEnabled && (
-                                      <button onClick={() => generateTextAssist(shot.id, 'notes', 'DP advising on camera/light.', `Focus on lighting, lens choice, and camera movement. Max 1-2 brief sentences.`)} disabled={!isRealUser || isAIBusy} className="p-1 hover:bg-blue-500/20 rounded disabled:opacity-50 shrink-0 text-blue-500">{loadingStates[`notes-${shot.id}`] ? <Loader2 size={12} className="animate-spin" /> : (!isRealUser ? <Lock size={12} /> : <Wand2 size={12} />)}</button>
-                                    )}
-                                  </div>
-                                  Director Notes
-                                </div>
-                                <textarea value={shot.notes || ''} onChange={(e) => updateShot(shot.id, 'notes', e.target.value)} className="w-full bg-zinc-950/50 rounded-[1.5rem] p-4 text-xs text-zinc-400 min-h-[100px] focus:outline-none border border-zinc-800/50 focus:border-blue-500/50 resize-y italic" />
-                              </div>
-                            </div>
-                          </div>
-                          
-                          {/* NEW BOTTOM BAR: Camera Move & Reordering Arrows */}
-                          <div className="flex justify-between items-end mt-6 pt-4 border-t border-zinc-800/50">
-                            <div className="flex flex-col gap-1.5">
-                              <span className="text-[9px] font-black text-zinc-600 uppercase tracking-widest flex items-center gap-1"><Video size={10}/> Camera Movement</span>
-                              <select value={shot.cameraMove || 'Locked Off'} onChange={(e) => updateShot(shot.id, 'cameraMove', e.target.value)} className="bg-zinc-950 text-blue-400 text-xs font-bold px-3 py-2 rounded-xl border border-zinc-800 focus:outline-none focus:border-blue-500/50 cursor-pointer appearance-none">
-                                {CAMERA_MOVES.map(m => <option key={m} value={m}>{m}</option>)}
-                              </select>
-                            </div>
-                            
-                            {/* THE JUMP MENU REORDERING UI */}
-                            <div className="flex items-center gap-1 bg-zinc-950/50 rounded-xl p-1 border border-zinc-800/50">
-                              <button onClick={() => moveShot(index, -1)} disabled={index === 0} className="p-2 md:p-1.5 text-zinc-600 hover:text-white disabled:opacity-20 transition-colors" title="Move Up"><ArrowUp size={16} /></button>
                               
-                              <div className="flex items-center px-1">
-                                <span className="text-[9px] font-black text-zinc-600 uppercase tracking-widest mr-1.5 hidden md:block">POS</span>
-                                <select 
-                                  value={index + 1} 
-                                  onChange={(e) => moveToPosition(index, parseInt(e.target.value) - 1)}
-                                  className="bg-zinc-900 text-orange-500 text-xs font-black px-2 py-1.5 rounded-lg border border-zinc-800 focus:outline-none focus:border-orange-500/50 cursor-pointer appearance-none text-center min-w-[3rem]"
-                                  title="Jump to position"
-                                >
-                                  {activeShots.map((_, i) => <option key={i} value={i + 1}>{i + 1}</option>)}
-                                </select>
-                              </div>
+                              {shot.lastEditedBy && isWritersRoom && <div className="mt-2 text-[9px] text-blue-400 italic">Last edit by: {shot.lastEditedBy}</div>}
 
-                              <button onClick={() => moveShot(index, 1)} disabled={index === activeShots.length - 1} className="p-2 md:p-1.5 text-zinc-600 hover:text-white disabled:opacity-20 transition-colors" title="Move Down"><ArrowDown size={16} /></button>
+                              <div className="flex flex-col gap-2 w-full mt-4">
+                                <div className="flex items-center bg-zinc-950/50 border border-zinc-800/50 rounded-xl px-3 py-3 md:py-2 w-full focus-within:border-orange-500/50 transition-colors">
+                                  <Clapperboard size={12} className="text-orange-500 mr-2 shrink-0" />
+                                  <input value={shot.sceneHeading || ''} onChange={(e) => updateShot(shot.id, 'sceneHeading', e.target.value)} placeholder="INT. LOCATION - DAY" className="w-full bg-transparent text-[10px] font-black uppercase text-zinc-300 focus:outline-none min-w-0 tracking-widest" />
+                                </div>
+                                <div className="flex gap-2 w-full">
+                                  <select value={shot.type || 'Medium'} onChange={(e) => updateShot(shot.id, 'type', e.target.value)} className="flex-1 w-full bg-zinc-800 border border-zinc-700 rounded-xl p-3 md:p-2.5 text-xs font-bold focus:ring-1 ring-orange-500 appearance-none">{SHOT_TYPES.map(type => <option key={type} value={type}>{type}</option>)}</select>
+                                  <button onClick={() => updateShot(shot.id, 'fx', !shot.fx)} className={`px-4 py-3 md:py-2 rounded-xl text-[10px] font-black border ${shot.fx ? 'bg-orange-600 text-white border-orange-400' : 'bg-zinc-800 text-zinc-500 border-zinc-700'}`}>FX</button>
+                                </div>
+                                <div className="flex items-center bg-zinc-950/50 border border-zinc-800/50 rounded-xl px-3 py-3 md:py-2 w-full"><Map size={12} className="text-zinc-500 mr-2 shrink-0" /><input value={shot.locationCaveat || ''} onChange={(e) => updateShot(shot.id, 'locationCaveat', e.target.value)} placeholder="Specific area caveat... (e.g. Corner desk)" className="w-full bg-transparent text-[10px] font-bold text-zinc-400 focus:outline-none min-w-0" /></div>
+                              </div>
                             </div>
 
+                            <div className="lg:col-span-8 flex flex-col justify-between w-full h-full">
+                              <div className="space-y-6">
+                                <div className="flex flex-col sm:flex-row justify-between sm:items-start gap-4">
+                                  <div className="flex-1 space-y-3 w-full">
+                                    <input value={shot.subject || ''} onChange={(e) => updateShot(shot.id, 'subject', e.target.value)} placeholder="Subject..." className="w-full bg-transparent text-xl md:text-2xl font-black border-b border-zinc-800 focus:border-orange-500 p-1 focus:outline-none" />
+                                    {availableCharacters.length > 0 && (
+                                      <div className="flex flex-wrap gap-2 pt-1">
+                                        <span className="text-[9px] font-black text-zinc-600 uppercase flex items-center h-6 mr-1 shrink-0">In Shot:</span>
+                                        {availableCharacters.map(char => {
+                                          const isActive = (shot.shotCharacters || []).includes(char);
+                                          return (<button key={char} onClick={() => toggleShotCharacter(shot.id, char)} className={`px-3 py-1.5 md:py-1 rounded-full text-[10px] font-bold border transition-all whitespace-nowrap ${isActive ? 'bg-green-500/20 text-green-400 border-green-500/50' : 'bg-zinc-800 text-zinc-500 border-zinc-700'}`}>{char}</button>);
+                                        })}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                                
+                                <div className="space-y-2 w-full">
+                                  <div className="flex items-center gap-2 text-[9px] font-black text-zinc-600 uppercase tracking-widest">
+                                    <div className="flex items-center gap-1">
+                                      {history[`shot-${shot.id}-action`] !== undefined && (
+                                        <button onClick={() => revertShotField(shot.id, 'action')} className="p-1 hover:bg-zinc-800 rounded transition-colors text-zinc-500 hover:text-zinc-300" title="Undo AI edit"><Undo size={12}/></button>
+                                      )}
+                                      {aiEnabled && (
+                                        <button onClick={() => generateTextAssist(shot.id, 'action', 'Director blocking physical comedy. Write in screenplay format.', `Describe exactly what we SEE. Focus on specific physical action, props, and facial expressions. Max 1-2 brief sentences.`)} disabled={!isRealUser || isAIBusy} className="p-1 hover:bg-orange-500/20 rounded disabled:opacity-50 shrink-0 text-orange-500">{loadingStates[`action-${shot.id}`] ? <Loader2 size={12} className="animate-spin" /> : (!isRealUser ? <Lock size={12} /> : <Clapperboard size={12} />)}</button>
+                                      )}
+                                    </div>
+                                    Action / Blocking
+                                  </div>
+                                  <textarea value={shot.action || ''} onChange={(e) => updateShot(shot.id, 'action', e.target.value)} className="w-full bg-zinc-950/50 rounded-[1.5rem] p-4 text-xs text-zinc-300 min-h-[80px] md:min-h-[60px] focus:outline-none border border-zinc-800/50 focus:border-orange-500/50 resize-y" />
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 w-full">
+                                  <div className="space-y-2 w-full">
+                                    <div className="flex items-center gap-2 text-[9px] font-black text-zinc-600 uppercase tracking-widest">
+                                      <div className="flex items-center gap-1">
+                                        {history[`shot-${shot.id}-dialogue`] !== undefined && (
+                                          <button onClick={() => revertShotField(shot.id, 'dialogue')} className="p-1 hover:bg-zinc-800 rounded transition-colors text-zinc-500 hover:text-zinc-300" title="Undo AI edit"><Undo size={12}/></button>
+                                        )}
+                                        {aiEnabled && (
+                                          <button onClick={() => generateTextAssist(shot.id, 'dialogue', 'Writer drafting dialogue.', `Write a single punchy line of dialogue, or a brief improv prompt. Max 1-2 sentences. DO NOT write a full script format.`)} disabled={!isRealUser || isAIBusy} className="p-1 hover:bg-purple-500/20 rounded disabled:opacity-50 shrink-0 text-purple-500">{loadingStates[`dialogue-${shot.id}`] ? <Loader2 size={12} className="animate-spin" /> : (!isRealUser ? <Lock size={12} /> : <Quote size={12} />)}</button>
+                                        )}
+                                      </div>
+                                      Dialogue / Improv
+                                    </div>
+                                    <textarea value={shot.dialogue || ''} onChange={(e) => updateShot(shot.id, 'dialogue', e.target.value)} className="w-full bg-zinc-950/50 rounded-[1.5rem] p-4 text-xs text-zinc-200 min-h-[100px] focus:outline-none border border-zinc-800/50 focus:border-purple-500/50 resize-y" />
+                                  </div>
+                                  <div className="space-y-2 w-full">
+                                    <div className="flex items-center gap-2 text-[9px] font-black text-zinc-600 uppercase tracking-widest">
+                                      <div className="flex items-center gap-1">
+                                        {history[`shot-${shot.id}-notes`] !== undefined && (
+                                          <button onClick={() => revertShotField(shot.id, 'notes')} className="p-1 hover:bg-zinc-800 rounded transition-colors text-zinc-500 hover:text-zinc-300" title="Undo AI edit"><Undo size={12}/></button>
+                                        )}
+                                        {aiEnabled && (
+                                          <button onClick={() => generateTextAssist(shot.id, 'notes', 'DP advising on camera/light.', `Focus on lighting, lens choice, and camera movement. Max 1-2 brief sentences.`)} disabled={!isRealUser || isAIBusy} className="p-1 hover:bg-blue-500/20 rounded disabled:opacity-50 shrink-0 text-blue-500">{loadingStates[`notes-${shot.id}`] ? <Loader2 size={12} className="animate-spin" /> : (!isRealUser ? <Lock size={12} /> : <Wand2 size={12} />)}</button>
+                                        )}
+                                      </div>
+                                      Director Notes
+                                    </div>
+                                    <textarea value={shot.notes || ''} onChange={(e) => updateShot(shot.id, 'notes', e.target.value)} className="w-full bg-zinc-950/50 rounded-[1.5rem] p-4 text-xs text-zinc-400 min-h-[100px] focus:outline-none border border-zinc-800/50 focus:border-blue-500/50 resize-y italic" />
+                                  </div>
+                                </div>
+                              </div>
+                              
+                              <div className="flex justify-between items-end mt-6 pt-4 border-t border-zinc-800/50">
+                                <div className="flex gap-4">
+                                  <div className="flex flex-col gap-1.5">
+                                    <span className="text-[9px] font-black text-zinc-600 uppercase tracking-widest flex items-center gap-1"><Video size={10}/> Camera Movement</span>
+                                    <select value={shot.cameraMove || 'Locked Off'} onChange={(e) => updateShot(shot.id, 'cameraMove', e.target.value)} className="bg-zinc-950 text-blue-400 text-xs font-bold px-3 py-2 rounded-xl border border-zinc-800 focus:outline-none focus:border-blue-500/50 cursor-pointer appearance-none">
+                                      {CAMERA_MOVES.map(m => <option key={m} value={m}>{m}</option>)}
+                                    </select>
+                                  </div>
+                                  <div className="flex flex-col gap-1.5">
+                                    <span className="text-[9px] font-black text-zinc-600 uppercase tracking-widest flex items-center gap-1"><Clock size={10}/> Duration (s)</span>
+                                    <input type="number" min="1" value={shot.duration || 5} onChange={(e) => updateShot(shot.id, 'duration', e.target.value)} className="bg-zinc-950 text-green-400 text-xs font-bold px-3 py-2 rounded-xl border border-zinc-800 focus:outline-none focus:border-green-500/50 w-20 text-center" />
+                                  </div>
+                                </div>
+                                
+                                <div className="flex items-center gap-1 bg-zinc-950/50 rounded-xl p-1 border border-zinc-800/50">
+                                  <button onClick={() => moveShot(index, -1)} disabled={index === 0} className="p-2 md:p-1.5 text-zinc-600 hover:text-white disabled:opacity-20 transition-colors" title="Move Up"><ArrowUp size={16} /></button>
+                                  <div className="flex items-center px-1">
+                                    <span className="text-[9px] font-black text-zinc-600 uppercase tracking-widest mr-1.5 hidden md:block">POS</span>
+                                    <select value={index + 1} onChange={(e) => moveToPosition(index, parseInt(e.target.value) - 1)} className="bg-zinc-900 text-orange-500 text-xs font-black px-2 py-1.5 rounded-lg border border-zinc-800 focus:outline-none focus:border-orange-500/50 cursor-pointer appearance-none text-center min-w-[3rem]" title="Jump to position">
+                                      {activeShots.map((_, i) => <option key={i} value={i + 1}>{i + 1}</option>)}
+                                    </select>
+                                  </div>
+                                  <button onClick={() => moveShot(index, 1)} disabled={index === activeShots.length - 1} className="p-2 md:p-1.5 text-zinc-600 hover:text-white disabled:opacity-20 transition-colors" title="Move Down"><ArrowDown size={16} /></button>
+                                </div>
+
+                              </div>
+                            </div>
                           </div>
-
                         </div>
-                      </div>
-                    </div>
 
-                    {/* NEW SUBTLE INSERT SHOT DIVIDER */}
-                    {index < activeShots.length - 1 && (
-                      <div className="flex justify-center relative z-10 group my-[-12px]">
-                        <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-zinc-800 border-dashed group-hover:border-orange-500/30 transition-colors"></div></div>
-                        <button onClick={() => insertShotAt(index, 'after')} className="relative bg-zinc-950 border border-zinc-800 group-hover:border-orange-500/50 text-zinc-500 group-hover:text-orange-400 rounded-full px-4 py-1.5 text-[10px] font-black tracking-widest flex items-center gap-1 transition-all">
-                          <Plus size={12}/> ADD SHOT
-                        </button>
-                      </div>
-                    )}
-                  </React.Fragment>
-                  )
-                })}
+                        {index < activeShots.length - 1 && (
+                          <div className="flex justify-center relative z-10 group my-[-12px]">
+                            <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-zinc-800 border-dashed group-hover:border-orange-500/30 transition-colors"></div></div>
+                            <button onClick={() => insertShotAt(index, 'after')} className="relative bg-zinc-950 border border-zinc-800 group-hover:border-orange-500/50 text-zinc-500 group-hover:text-orange-400 rounded-full px-4 py-1.5 text-[10px] font-black tracking-widest flex items-center gap-1 transition-all">
+                              <Plus size={12}/> ADD SHOT
+                            </button>
+                          </div>
+                        )}
+                      </React.Fragment>
+                      )
+                    })}
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-8">
-                  <button onClick={addShot} className="w-full py-8 border-2 border-dashed border-zinc-800 rounded-[2rem] md:rounded-[3rem] text-zinc-600 hover:text-orange-500 hover:border-orange-500/50 hover:bg-orange-500/5 transition-all flex flex-col items-center justify-center gap-3 font-black tracking-widest group">
-                    <div className="bg-zinc-900 group-hover:bg-orange-500/20 p-4 rounded-full"><Plus size={24} className="text-zinc-500 group-hover:text-orange-500" /></div> ADD SHOT AT BOTTOM
-                  </button>
-                  {aiEnabled && (
-                    <button onClick={generateSingleAIShot} disabled={!isRealUser || isAIBusy} className="w-full py-8 border-2 border-dashed border-purple-900/50 rounded-[2rem] md:rounded-[3rem] text-purple-600/50 hover:text-purple-400 hover:border-purple-500/50 hover:bg-purple-500/5 transition-all flex flex-col items-center justify-center gap-3 font-black tracking-widest group disabled:opacity-50">
-                      <div className="bg-purple-900/20 group-hover:bg-purple-500/20 p-4 rounded-full">
-                        {loadingStates.singleAIShot ? <Loader2 size={24} className="animate-spin text-purple-500" /> : (!isRealUser ? <Lock size={24} /> : <Sparkles size={24} className="text-purple-500 group-hover:text-purple-400" />)}
-                      </div> 
-                      AUTO-FILL NEXT SHOT
-                    </button>
-                  )}
-                </div>
-              </div>
-            )}
-            
-            {/* --- TAB: SHOOT PLAN --- */}
-            {viewMode === 'shoot-plan' && (
-              <div className="animate-in fade-in slide-in-from-bottom-4 duration-300">
-                 {shootPlan.length > 0 && (
-                  <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-[2rem] p-6 md:p-8 mb-6 md:mb-8 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 shadow-xl">
-                    <div>
-                      <h2 className="text-xl md:text-2xl font-black uppercase tracking-tighter text-yellow-500 flex items-center gap-2"><Zap size={24}/> Optimized Shoot Plan</h2>
-                      <p className="text-xs text-yellow-500/60 mt-1">Grouped by location, type, and talent to save time on set.</p>
-                    </div>
-                    <div className="flex gap-2 w-full sm:w-auto">
-                      <button onClick={optimizeShootOrder} disabled={!isRealUser || isAIBusy} className="flex-1 sm:flex-none justify-center items-center gap-2 px-6 py-2.5 bg-yellow-500/10 text-yellow-500 hover:bg-yellow-500/20 border border-yellow-500/30 rounded-full text-xs font-black transition-all flex">
-                        {loadingStates.optimizing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCcw size={14} />} REASSESS
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-8">
+                      <button onClick={addShot} className="w-full py-8 border-2 border-dashed border-zinc-800 rounded-[2rem] md:rounded-[3rem] text-zinc-600 hover:text-orange-500 hover:border-orange-500/50 hover:bg-orange-500/5 transition-all flex flex-col items-center justify-center gap-3 font-black tracking-widest group">
+                        <div className="bg-zinc-900 group-hover:bg-orange-500/20 p-4 rounded-full"><Plus size={24} className="text-zinc-500 group-hover:text-orange-500" /></div> ADD SHOT AT BOTTOM
                       </button>
-                      <button onClick={downloadShootPlan} className="flex-1 sm:flex-none justify-center items-center gap-2 px-6 py-2.5 bg-zinc-800 text-yellow-500 hover:bg-zinc-700 border border-zinc-700 rounded-full text-xs font-black transition-all flex"><Download size={14} /> SAVE PLAN</button>
+                      {aiEnabled && (
+                        <button onClick={generateSingleAIShot} disabled={!isRealUser || isAIBusy} className="w-full py-8 border-2 border-dashed border-purple-900/50 rounded-[2rem] md:rounded-[3rem] text-purple-600/50 hover:text-purple-400 hover:border-purple-500/50 hover:bg-purple-500/5 transition-all flex flex-col items-center justify-center gap-3 font-black tracking-widest group disabled:opacity-50">
+                          <div className="bg-purple-900/20 group-hover:bg-purple-500/20 p-4 rounded-full">
+                            {loadingStates.singleAIShot ? <Loader2 size={24} className="animate-spin text-purple-500" /> : (!isRealUser ? <Lock size={24} /> : <Sparkles size={24} className="text-purple-500 group-hover:text-purple-400" />)}
+                          </div> 
+                          AUTO-FILL NEXT SHOT
+                        </button>
+                      )}
                     </div>
                   </div>
                 )}
                 
-                {shootPlan.map((shot, index) => {
-                  const isNewScene = index === 0 || shot.sceneHeading !== shootPlan[index - 1].sceneHeading;
-                  return (
-                    <React.Fragment key={shot.id}>
-                      {isNewScene && (
-                        <div className="flex items-center gap-4 py-4 mt-6">
-                          <div className="text-sm font-black uppercase tracking-widest text-yellow-500 flex items-center gap-2">
-                             <Map size={16}/> {shot.sceneHeading}
+                {/* 1ST AD SHOOT PLAN VIEW */}
+                {boardSubTab === 'shoot-plan' && (
+                  <div className="animate-in fade-in slide-in-from-bottom-4 duration-300">
+                     {shootPlan.length > 0 ? (
+                      shootPlan.map((shot, index) => {
+                        const isNewScene = index === 0 || shot.sceneHeading !== shootPlan[index - 1].sceneHeading;
+                        return (
+                          <React.Fragment key={shot.id}>
+                            {isNewScene && (
+                              <div className="flex items-center gap-4 py-4 mt-6">
+                                <div className="text-sm font-black uppercase tracking-widest text-yellow-500 flex items-center gap-2">
+                                   <Map size={16}/> {shot.sceneHeading}
+                                </div>
+                                <div className="h-px bg-zinc-800 flex-1"></div>
+                              </div>
+                            )}
+                            <div className={`group bg-zinc-900/40 border ${shot.fx ? 'border-orange-500/40' : 'border-zinc-800'} rounded-[2rem] p-6 hover:bg-zinc-900/60 transition-all relative overflow-hidden mb-4 shadow-md`}>
+                               <div className="absolute top-0 right-0 p-4 text-4xl text-zinc-800/30 font-black pointer-events-none select-none z-0">{shot.shootOrderNumber}</div>
+                               <div className="relative z-10 flex flex-col md:flex-row gap-6">
+                                 {shot.image && <img src={shot.image} className="w-full md:w-48 aspect-video object-cover rounded-xl border border-zinc-800 shrink-0"/>}
+                                 <div className="flex-1 space-y-2">
+                                   <div className="flex flex-wrap gap-2 items-center">
+                                     <span className="text-xs font-black bg-zinc-800 text-zinc-300 px-2 py-1 rounded uppercase tracking-wider">{shot.type}</span>
+                                     {shot.cameraMove && shot.cameraMove !== 'Locked Off' && <span className="text-[10px] font-black text-blue-500 bg-blue-500/10 border border-blue-500/20 uppercase tracking-widest px-2 py-1 rounded flex items-center gap-1"><Video size={10} className="inline -mt-0.5"/> {shot.cameraMove}</span>}
+                                     {shot.locationCaveat && <span className="text-[10px] font-black text-yellow-500 bg-yellow-500/10 border border-yellow-500/20 uppercase tracking-widest px-2 py-1 rounded">LOC: {shot.locationCaveat}</span>}
+                                     {shot.duration && <span className="text-[10px] font-black text-green-500 bg-green-500/10 border border-green-500/20 uppercase tracking-widest px-2 py-1 rounded flex items-center gap-1"><Clock size={10} className="inline -mt-0.5"/> {shot.duration}s</span>}
+                                     <span className="text-lg font-black uppercase">{shot.subject}</span>
+                                   </div>
+                                   {shot.optimizationReason && <div className="text-xs italic text-yellow-500/70 border-l-2 border-yellow-500/50 pl-3 py-1 my-2">{shot.optimizationReason}</div>}
+                                   <p className="text-sm text-zinc-400"><span className="text-[10px] font-black uppercase tracking-widest text-zinc-600 block mb-1">Action</span>{shot.action}</p>
+                                   <p className="text-xs text-zinc-500"><span className="text-[10px] font-black uppercase tracking-widest text-zinc-600 block mb-1 mt-2">Notes</span>{shot.notes}</p>
+                                 </div>
+                               </div>
+                            </div>
+                          </React.Fragment>
+                        )
+                      })
+                     ) : (
+                       <div className="py-16 text-center border-2 border-dashed border-zinc-800 rounded-[3rem] text-zinc-600 flex flex-col items-center gap-4">
+                         <Zap size={48} className="opacity-30 text-yellow-500"/>
+                         <p className="text-sm font-bold uppercase tracking-widest text-zinc-500">Plan not generated.<br/>Click "1st AD Plan" to optimize your shoot order.</p>
+                       </div>
+                     )}
+                  </div>
+                )}
+                
+                {/* PRINT VIEWS (Full screen takeover rendered via CSS) */}
+                {(boardSubTab === 'print-boards' || boardSubTab === 'print-list') && (
+                  <div className="print:absolute print:inset-0 print:bg-white print:text-black print:z-[999] min-h-screen bg-white text-black p-6 md:p-12 font-serif rounded-[2rem] shadow-2xl">
+                    <div className="flex items-center gap-2 print:hidden mb-12 border-b-2 border-black pb-6 justify-between">
+                      <button onClick={() => setBoardSubTab('grid')} className="flex items-center gap-2 px-4 py-2 bg-black hover:bg-zinc-800 transition-colors text-white rounded-full text-xs font-bold shadow-lg">
+                        <ArrowLeft size={14} /> EXIT PRINT PREVIEW
+                      </button>
+                      <div className="flex gap-4">
+                        {boardSubTab === 'print-boards' && (
+                          <div className="flex bg-zinc-200 rounded-full p-1 shadow-inner items-center">
+                            <span className="text-[10px] font-black uppercase text-zinc-500 px-3 select-none">Columns:</span>
+                            {[1, 2, 3, 4].map(num => (
+                              <button key={num} onClick={() => setBoardCols(num)} className={`px-4 py-1.5 rounded-full text-xs font-bold transition-colors ${boardCols === num ? 'bg-black text-white shadow' : 'text-zinc-600 hover:text-black'}`}>{num}</button>
+                            ))}
                           </div>
-                          <div className="h-px bg-zinc-800 flex-1"></div>
+                        )}
+                        <button onClick={() => window.print()} className="flex items-center gap-2 px-6 py-2 bg-blue-600 hover:bg-blue-500 transition-colors text-white rounded-full text-xs font-bold shadow-lg">
+                          <Printer size={14} /> PRINT DOC
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="max-w-6xl mx-auto space-y-8">
+                      <div className="border-b-4 border-black pb-4 flex flex-col md:flex-row justify-between md:items-end gap-2">
+                        <h1 className="text-3xl md:text-4xl font-black uppercase tracking-tighter leading-none">{activeSketch?.title}</h1>
+                        <div className="text-left md:text-right text-[10px] font-bold uppercase">{new Date().toLocaleDateString()}</div>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-8 border-b border-black pb-4 text-sm">
+                        <p><strong>CHARACTERS:</strong> {availableCharacters.join(', ') || 'N/A'}</p>
+                        <p><strong>EST RUNTIME:</strong> {formatTime(totalDurationSeconds)}</p>
+                        <p className="md:col-span-2"><strong>PROPS:</strong> {activePropsList.join(', ') || 'None'}</p>
+                        {activeSketch?.premise && <p className="md:col-span-2 text-xs italic"><strong>PREMISE:</strong> {activeSketch.premise}</p>}
+                      </div>
+
+                      {boardSubTab === 'print-list' ? (
+                        <div className="space-y-4 overflow-x-auto">
+                          <table className="w-full text-left border-collapse min-w-[600px]">
+                            <thead><tr className="border-b-2 border-black text-[10px] font-black uppercase tracking-widest"><th className="py-2 w-12">#</th><th className="py-2 w-24">Type</th><th className="py-2">Details & Action</th><th className="py-2 w-16">FX</th></tr></thead>
+                            <tbody>
+                              {currentDisplayList.map((shot, idx) => (
+                                <React.Fragment key={shot.id}>
+                                  {(idx === 0 || shot.sceneHeading !== currentDisplayList[idx-1].sceneHeading) && (
+                                    <tr>
+                                      <td colSpan="4" className="py-4 font-black uppercase border-b border-black text-xs bg-zinc-100 px-2">{shot.sceneHeading}</td>
+                                    </tr>
+                                  )}
+                                  <tr className="border-b border-zinc-200 align-top break-inside-avoid">
+                                    <td className="py-4 font-bold">{idx + 1}</td>
+                                    <td className="py-4 font-bold text-[10px] uppercase">
+                                      {shot.type}
+                                      {shot.cameraMove && shot.cameraMove !== 'Locked Off' && <span className="block text-[8px] text-blue-600 mt-1">{shot.cameraMove}</span>}
+                                      {shot.shotCharacters?.length > 0 && (
+                                        <div className="mt-2 space-y-1">
+                                          {shot.shotCharacters.map(c => <span key={c} className="block text-[8px] bg-zinc-100 px-1 py-0.5 rounded border border-zinc-300 w-fit">{c}</span>)}
+                                        </div>
+                                      )}
+                                    </td>
+                                    <td className="py-4 space-y-1 pr-4">
+                                      <p className="font-bold">{shot.subject}</p>
+                                      {shot.action && <p className="text-sm">{shot.action}</p>}
+                                      {shot.dialogue && <p className="text-xs italic">"{shot.dialogue}"</p>}
+                                      {shot.notes && <p className="text-[10px] text-zinc-500">Note: {shot.notes}</p>}
+                                    </td>
+                                    <td className="py-4 font-black text-xs">{shot.fx ? 'YES' : '—'}</td>
+                                  </tr>
+                                </React.Fragment>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      ) : (
+                        <div className={`grid ${gridColsClass} gap-6 md:gap-8 w-full print:gap-4`}>
+                          {currentDisplayList.map((shot, idx) => (
+                            <div key={shot.id} className="break-inside-avoid flex flex-col border-2 border-black rounded-lg overflow-hidden bg-white shadow-sm">
+                              <div className="bg-black text-white text-[9px] font-black uppercase p-1.5 truncate border-b border-black flex justify-between">
+                                <span>{shot.sceneHeading}</span>
+                                <span>{shot.duration}s</span>
+                              </div>
+                              <div className="aspect-video border-b-2 border-black bg-zinc-100 flex items-center justify-center relative overflow-hidden" style={{ aspectRatio: (activeSketch?.aspectRatio || '16:9').replace(':', '/') }}>
+                                {shot.image ? (
+                                  <img src={shot.image} alt={`Shot ${idx + 1}`} className="w-full h-full object-cover" />
+                                ) : (
+                                  <div className="text-zinc-300 font-sans font-black tracking-widest uppercase text-xl">NO IMAGE</div>
+                                )}
+                                <div className="absolute top-2 left-2 bg-white border-2 border-black px-2 py-0.5 text-xs font-black shadow-[2px_2px_0px_rgba(0,0,0,1)] text-black">
+                                  {idx + 1}
+                                </div>
+                                {shot.fx && (
+                                  <div className="absolute top-2 right-2 bg-orange-500 text-white border-2 border-black px-2 py-0.5 text-[10px] font-black shadow-[2px_2px_0px_rgba(0,0,0,1)]">
+                                    FX
+                                  </div>
+                                )}
+                              </div>
+                              <div className="p-4 font-sans space-y-3">
+                                <div className="font-black uppercase text-sm border-b border-zinc-200 pb-2 text-black">
+                                  <span className="text-zinc-500 mr-2">[{shot.type}]</span>{shot.subject}
+                                </div>
+                                <div className="text-xs space-y-2 text-black">
+                                  {shot.locationCaveat && <div className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest bg-zinc-100 p-1.5 rounded inline-block mb-1">LOC: {shot.locationCaveat}</div>}
+                                  {shot.cameraMove && shot.cameraMove !== 'Locked Off' && <div className="text-[9px] font-bold text-blue-500 uppercase tracking-widest bg-blue-50 p-1.5 rounded inline-block ml-1 mb-1 border border-blue-200"><Video size={10} className="inline mr-1 -mt-0.5"/>{shot.cameraMove}</div>}
+                                  {shot.action && <p className="leading-snug"><span className="font-bold uppercase text-[10px] tracking-widest block text-zinc-500 mb-0.5">Action</span> {shot.action}</p>}
+                                  {shot.dialogue && <p className="leading-snug italic"><span className="font-bold uppercase not-italic text-[10px] tracking-widest block text-zinc-500 mb-0.5">Dialogue</span> "{shot.dialogue}"</p>}
+                                  {shot.notes && <p className="leading-snug text-zinc-600"><span className="font-bold text-black uppercase text-[10px] tracking-widest block mb-0.5">Notes</span> {shot.notes}</p>}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
                         </div>
                       )}
-                      <div className={`group bg-zinc-900/40 border ${shot.fx ? 'border-orange-500/40' : 'border-zinc-800'} rounded-[2rem] p-6 hover:bg-zinc-900/60 transition-all relative overflow-hidden mb-4 shadow-md`}>
-                         <div className="absolute top-0 right-0 p-4 text-4xl text-zinc-800/30 font-black pointer-events-none select-none z-0">{shot.shootOrderNumber}</div>
-                         <div className="relative z-10 flex flex-col md:flex-row gap-6">
-                           {shot.image && <img src={shot.image} className="w-full md:w-48 aspect-video object-cover rounded-xl border border-zinc-800 shrink-0"/>}
-                           <div className="flex-1 space-y-2">
-                             <div className="flex flex-wrap gap-2 items-center">
-                               <span className="text-xs font-black bg-zinc-800 text-zinc-300 px-2 py-1 rounded uppercase tracking-wider">{shot.type}</span>
-                               {shot.cameraMove && shot.cameraMove !== 'Locked Off' && <span className="text-[10px] font-black text-blue-500 bg-blue-500/10 border border-blue-500/20 uppercase tracking-widest px-2 py-1 rounded flex items-center gap-1"><Video size={10} className="inline -mt-0.5"/> {shot.cameraMove}</span>}
-                               {shot.locationCaveat && <span className="text-[10px] font-black text-yellow-500 bg-yellow-500/10 border border-yellow-500/20 uppercase tracking-widest px-2 py-1 rounded">LOC: {shot.locationCaveat}</span>}
-                               <span className="text-lg font-black uppercase">{shot.subject}</span>
-                             </div>
-                             {shot.optimizationReason && <div className="text-xs italic text-yellow-500/70 border-l-2 border-yellow-500/50 pl-3 py-1 my-2">{shot.optimizationReason}</div>}
-                             <p className="text-sm text-zinc-400"><span className="text-[10px] font-black uppercase tracking-widest text-zinc-600 block mb-1">Action</span>{shot.action}</p>
-                             <p className="text-xs text-zinc-500"><span className="text-[10px] font-black uppercase tracking-widest text-zinc-600 block mb-1 mt-2">Notes</span>{shot.notes}</p>
-                           </div>
-                         </div>
-                      </div>
-                    </React.Fragment>
-                  )
-                })}
+                    </div>
+                  </div>
+                )}
+
               </div>
             )}
 
@@ -2046,7 +2141,7 @@ const App = () => {
       </main>
 
       {zoomedImage && (
-        <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4 backdrop-blur-sm cursor-zoom-out" onClick={() => setZoomedImage(null)}>
+        <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4 backdrop-blur-sm cursor-zoom-out print:hidden" onClick={() => setZoomedImage(null)}>
           <div className="relative max-w-7xl w-full max-h-screen flex justify-center">
             <img src={zoomedImage} alt="Zoomed Storyboard" className="max-w-full max-h-[90vh] object-contain rounded-xl shadow-2xl border border-zinc-800" />
             <button onClick={() => setZoomedImage(null)} className="absolute -top-2 -right-2 md:-top-4 md:-right-4 p-3 bg-zinc-900 border border-zinc-700 rounded-full text-white hover:bg-zinc-800 shadow-xl"><X size={20} /></button>
