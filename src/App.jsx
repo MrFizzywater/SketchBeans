@@ -985,22 +985,28 @@ const App = () => {
       const typeList = SHOT_TYPES.join(', ');
       const cameraMoveList = CAMERA_MOVES.join(', ');
       
-      let taskInstruction = `Generate exactly ${count} shots.`;
-      if (type === 'opening') taskInstruction = `Generate an Opening Image / Establishing Shot (exactly 1 shot).`;
-      if (type === 'ending') taskInstruction = `Generate a Final Closing Shot / Outro (exactly 1 shot).`;
+      let taskInstruction = `Generate a JSON array containing exactly ${count} shot objects.`;
+      if (type === 'opening') taskInstruction = `Generate a JSON array containing exactly 1 Opening Image / Establishing Shot.`;
+      if (type === 'ending') taskInstruction = `Generate a JSON array containing exactly 1 Final Closing Shot / Outro.`;
 
-      const systemPrompt = `Expert director. ${taskInstruction} Use these EXACT keys: "type" (MUST BE EXACTLY ONE OF: ${typeList}), "subject", "action", "notes", "dialogue", "duration" (estimated seconds, number), "cameraMove" (Must be one of: ${cameraMoveList}), "shotCharacters" (array of strings), "sceneHeading" (Infer a logical master scene heading, e.g. INT. LIVING ROOM - DAY). CRITICAL: Treat every character as a distinctly separate individual. Keep descriptions punchy and direct. Max 1-2 sentences per field. DO NOT write full script pages.`;
+      const systemPrompt = `Expert director. ${taskInstruction} YOU MUST RETURN A VALID JSON ARRAY []. Use these EXACT keys for each object: "type" (MUST BE EXACTLY ONE OF: ${typeList}), "subject", "action", "notes", "dialogue", "duration" (estimated seconds, number), "cameraMove" (Must be one of: ${cameraMoveList}), "shotCharacters" (array of strings), "sceneHeading" (Infer a logical master scene heading, e.g. INT. LIVING ROOM - DAY). CRITICAL: Treat every character as a distinctly separate individual. Keep descriptions punchy and direct. Max 1-2 sentences per field. DO NOT write full script pages.`;
       const prompt = `PREMISE: ${activeSketch?.premise}\nTONE: ${activeSketch?.tone}\nCHARACTERS AVAILABLE: ${richCharactersContext}\nHOOK: ${activeSketch?.hook}\nESCALATION: ${activeSketch?.escalation}\nENDING: ${activeSketch?.ending}`;
       
       const newShotsData = await callGemini(prompt, systemPrompt, true);
       
-      if (newShotsData && Array.isArray(newShotsData)) {
+      let normalizedData = newShotsData;
+      if (normalizedData && !Array.isArray(normalizedData)) {
+        // Fallback: If AI hallucinates a wrapper object or a raw single object, force it into an array
+        normalizedData = normalizedData.shots ? normalizedData.shots : [normalizedData];
+      }
+
+      if (normalizedData && Array.isArray(normalizedData)) {
         updateContextState(prev => {
           const currentSketchShots = prev.filter(s => s.sketchId === activeSketchId);
           const maxNum = currentSketchShots.length > 0 ? Math.max(...currentSketchShots.map(s => s.number)) : 0;
           const lastHeading = currentSketchShots.length > 0 ? currentSketchShots[currentSketchShots.length - 1].sceneHeading : 'INT. LOCATION - DAY';
           
-          const newShots = newShotsData.map((s, idx) => ({ 
+          const newShots = normalizedData.map((s, idx) => ({ 
             ...s, 
             id: `ai-${Date.now()}-${idx}`, 
             sketchId: activeSketchId, 
