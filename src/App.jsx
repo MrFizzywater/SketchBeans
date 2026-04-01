@@ -71,7 +71,11 @@ const getSkinText = (val) => {
 const formatTime = (secs) => {
   const m = Math.floor(secs / 60);
   const s = secs % 60;
-  return m > 0 ? `${m}m ${s}s` : `${s}s`;
+  return m > 0 ? (
+    <>{m}<span className="opacity-50 lowercase ml-[1px] mr-1">m</span>{s}<span className="opacity-50 lowercase ml-[1px]">s</span></>
+  ) : (
+    <>{s}<span className="opacity-50 lowercase ml-[1px]">s</span></>
+  );
 };
 
 const App = () => {
@@ -562,7 +566,7 @@ const App = () => {
   };
 
   const exportSnapshot = () => {
-    const data = { version: "6.1", timestamp: new Date().toISOString(), sketches, shots, publicSketches, publicShots };
+    const data = { version: "6.2", timestamp: new Date().toISOString(), sketches, shots, publicSketches, publicShots };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a'); link.href = url; link.download = `SketchBeans_FullBackup_${new Date().getTime()}.json`;
@@ -575,7 +579,7 @@ const App = () => {
     
     if (!targetSketch) return;
 
-    const data = { version: "6.1", timestamp: new Date().toISOString(), sketches: [targetSketch], shots: targetShots };
+    const data = { version: "6.2", timestamp: new Date().toISOString(), sketches: [targetSketch], shots: targetShots };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a'); link.href = url; 
@@ -741,20 +745,27 @@ const App = () => {
     const location = shot.sceneHeading || 'LOCATION';
     const style = activeSketch?.imageStyle || 'Pencil Sketch';
     
-    let stylePrefix = "Rough storyboard sketch, mixed media graphite and colored pencil.";
-    if (style === 'Photographic') stylePrefix = "High-resolution photograph, photorealistic, 85mm lens.";
-    else if (style === 'Cinematic') stylePrefix = "Cinematic movie still, anamorphic lens, dramatic lighting, highly detailed.";
-    else if (style === 'Comic Book') stylePrefix = "Comic book panel, ink outlines, vivid colors, graphic novel style.";
+    let stylePrefix = "";
+    if (style === 'Photographic') stylePrefix = "High-resolution photograph, photorealistic, 85mm lens, cinematic lighting.";
+    else if (style === 'Cinematic') stylePrefix = "Cinematic movie still, anamorphic lens, dramatic lighting, highly detailed, 35mm film.";
+    else if (style === 'Comic Book') stylePrefix = "Comic book art panel, vivid colors, graphic novel ink style.";
     else if (style === 'Watercolor') stylePrefix = "Expressive watercolor painting, loose artistic brush strokes.";
-    else if (style === '3D Render') stylePrefix = "High-quality 3D render, stylized but detailed, cinematic lighting.";
+    else if (style === '3D Render') stylePrefix = "High-quality 3D render, stylized but detailed, Unreal Engine style.";
     else if (style === 'Vintage Film') stylePrefix = "Vintage 35mm film still, grainy, retro color grading, nostalgic aesthetic.";
+    else stylePrefix = "Rough storyboard sketch, mixed media graphite and colored pencil.";
 
-    let prompt = `Context: ${activeSketch?.premise || activeSketch?.title}. Focus on creating a storyboard panel for THIS SPECIFIC SHOT: A ${shot.type} shot of ${shot.subject}. Location: ${location}. `;
-    if (shot.cameraMove !== 'Locked Off') prompt += `Framed for a ${shot.cameraMove} camera movement. `;
-    if (shot.action) prompt += `Action: ${shot.action} `;
-    if (charContext) prompt += `\n\nCRITICAL LIKENESS INSTRUCTIONS: The characters in this shot must match these exact physical descriptions: ${charContext}. Do not deviate from these physical traits. \n\n`;
-    if (shot.notes) prompt += `Visual Notes: ${shot.notes}. `;
-    prompt += `${stylePrefix} PURE ARTWORK ONLY. NO TEXT, NO WORDS, NO TITLES, NO WATERMARKS in the image.`;
+    let prompt = `CRITICAL INSTRUCTION: Generate a SINGLE, borderless, full-bleed image. ABSOLUTELY NO TEXT, NO BORDERS, NO ARROWS, NO WATERMARKS, NO STORYBOARD MARKS. Just the pure artwork.\n\n`;
+    prompt += `VISUAL STYLE: ${stylePrefix}\n\n`;
+    prompt += `SCENE CONTEXT: ${activeSketch?.premise || activeSketch?.title}\n`;
+    prompt += `LOCATION: ${location}\n\n`;
+    prompt += `IMAGE TO GENERATE: A ${shot.type} shot of ${shot.subject}. `;
+    if (shot.cameraMove !== 'Locked Off') prompt += `The camera is moving: ${shot.cameraMove}. `;
+    if (shot.action) prompt += `Action happening in frame: ${shot.action} `;
+    
+    if (charContext) prompt += `\n\nSUBJECT DETAILS (Strict Likeness): The characters in this frame must match these descriptions exactly: ${charContext}.`;
+    
+    if (shot.notes) prompt += `\n\nDIRECTOR NOTES: ${shot.notes}`;
+
     return prompt;
   };
 
@@ -1941,7 +1952,7 @@ const App = () => {
                                      <span className="text-xs font-black bg-zinc-800 text-zinc-300 px-2 py-1 rounded uppercase tracking-wider">{shot.type}</span>
                                      {shot.cameraMove && shot.cameraMove !== 'Locked Off' && <span className="text-[10px] font-black text-blue-500 bg-blue-500/10 border border-blue-500/20 uppercase tracking-widest px-2 py-1 rounded flex items-center gap-1"><Video size={10} className="inline -mt-0.5"/> {shot.cameraMove}</span>}
                                      {shot.locationCaveat && <span className="text-[10px] font-black text-yellow-500 bg-yellow-500/10 border border-yellow-500/20 uppercase tracking-widest px-2 py-1 rounded">LOC: {shot.locationCaveat}</span>}
-                                     {shot.duration && <span className="text-[10px] font-black text-green-500 bg-green-500/10 border border-green-500/20 uppercase tracking-widest px-2 py-1 rounded flex items-center gap-1"><Clock size={10} className="inline -mt-0.5"/> {shot.duration}s</span>}
+                                     {shot.duration && <span className="text-[10px] font-black text-green-500 bg-green-500/10 border border-green-500/20 uppercase tracking-widest px-2 py-1 rounded flex items-center gap-1"><Clock size={10} className="inline -mt-0.5"/> {shot.duration}<span className="opacity-50 lowercase ml-[1px]">s</span></span>}
                                      <span className="text-lg font-black uppercase">{shot.subject}</span>
                                    </div>
                                    {shot.optimizationReason && <div className="text-xs italic text-yellow-500/70 border-l-2 border-yellow-500/50 pl-3 py-1 my-2">{shot.optimizationReason}</div>}
@@ -2038,7 +2049,7 @@ const App = () => {
                             <div key={shot.id} className="break-inside-avoid flex flex-col border-2 border-black rounded-lg overflow-hidden bg-white shadow-sm">
                               <div className="bg-black text-white text-[9px] font-black uppercase p-1.5 truncate border-b border-black flex justify-between">
                                 <span>{shot.sceneHeading}</span>
-                                <span>{shot.duration}s</span>
+                                <span>{shot.duration}<span className="text-zinc-400 lowercase ml-[1px]">s</span></span>
                               </div>
                               <div className="aspect-video border-b-2 border-black bg-zinc-100 flex items-center justify-center relative overflow-hidden" style={{ aspectRatio: (activeSketch?.aspectRatio || '16:9').replace(':', '/') }}>
                                 {shot.image ? (
