@@ -887,11 +887,19 @@ const App = () => {
     const shot = activeShots.find(s => s.id === shotId);
     let promptText = getShotPrompt(shot);
 
+    // --- FREE ENGINE BYPASS ---
     if (useFreeImageGen) {
       try {
         const aspectMap = { '16:9': {w: 800, h: 450}, '1:1': {w: 512, h: 512}, '4:3': {w: 800, h: 600}, '9:16': {w: 450, h: 800}, '3:4': {w: 600, h: 800} };
         const dims = aspectMap[activeSketch?.aspectRatio || '16:9'];
-        const resultUrl = await fetchFreeImage(promptText, dims.w, dims.h);
+        
+        // Strip out the massive Gemini system prompt to prevent URL length 500 errors
+        let freeStyle = activeSketch?.imageStyle || 'Storyboard sketch';
+        if (freeStyle === 'Stick Figure') freeStyle = 'Simple literal stick figure drawing on white paper, stickman, stick figures';
+        const charContext = shot.shotCharacters?.length > 0 ? shot.shotCharacters.map(n => activeProfiles.find(p => p.name === n)?.visualStyle || n).join(', ') : "";
+        const freePrompt = `Art style: ${freeStyle}. ${shot.type} shot of ${shot.subject}, ${shot.action}. Location: ${shot.sceneHeading}. ${charContext}`;
+        
+        const resultUrl = await fetchPollinationsImage(freePrompt, dims.w, dims.h);
         setFullResImages(prev => ({ ...prev, [shotId]: resultUrl }));
         updateShot(shotId, 'image', resultUrl);
       } catch (err) {
@@ -901,22 +909,45 @@ const App = () => {
       return;
     }
 
+    const charImages = (shot.shotCharacters || [])
+      .map(n => activeProfiles.find(p => p.name === n)?.image)
+      .filter(img => img);
+
     const maxRetries = 6; let delay = 3000;
     try {
       for (let i = 0; i < maxRetries; i++) {
         try {
-          const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${globalImageModel}:predict?key=${activeKey}`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ instances: { prompt: promptText }, parameters: { sampleCount: 1, aspectRatio: activeSketch?.aspectRatio || '16:9' } })
-          });
-          
-          if (response.status === 404) throw new Error("404_MODEL_NOT_FOUND");
-          if (response.status === 403 || response.status === 400) throw new Error("FREE_TIER");
-          if (response.status === 429) throw new Error("429");
-          if (!response.ok) throw new Error(`Google API threw a ${response.status}.`);
+          let rawImageUrl = "";
 
-          const result = await response.json();
-          const rawImageUrl = `data:image/png;base64,${result.predictions[0].bytesBase64Encoded}`;
+          if (charImages.length > 0) {
+            promptText = `[CHARACTER REFERENCE PHOTOS ATTACHED] Use the attached images as strict visual references for the actors in this shot. Match their likeness, face, and presentation exactly. \n\n${promptText}`;
+            const parts = charImages.map(img => ({ inlineData: { mimeType: img.split(';')[0].split(':')[1], data: img.split(',')[1] } }));
+            parts.push({ text: promptText });
+
+            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image-preview:generateContent?key=${activeKey}`, {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ contents: [{ role: "user", parts: parts }], generationConfig: { responseModalities: ["IMAGE"] } })
+            });
+            if (response.status === 403 || response.status === 400 || response.status === 404) throw new Error("FREE_TIER");
+            if (response.status === 429) throw new Error("429");
+            if (!response.ok) throw new Error(`Google API threw a ${response.status}.`);
+
+            const result = await response.json();
+            const inlineData = result.candidates?.[0]?.content?.parts?.find(p => p.inlineData)?.inlineData;
+            if (!inlineData) throw new Error("No image data returned from model.");
+            rawImageUrl = `data:${inlineData.mimeType};base64,${inlineData.data}`;
+          } else {
+            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${globalImageModel}:predict?key=${activeKey}`, {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ instances: { prompt: promptText }, parameters: { sampleCount: 1, aspectRatio: activeSketch?.aspectRatio || '16:9' } })
+            });
+            if (response.status === 403 || response.status === 400 || response.status === 404) throw new Error("FREE_TIER");
+            if (response.status === 429) throw new Error("429");
+            if (!response.ok) throw new Error(`Google API threw a ${response.status}.`);
+
+            const result = await response.json();
+            rawImageUrl = `data:image/png;base64,${result.predictions[0].bytesBase64Encoded}`;
+          }
           
           setFullResImages(prev => ({ ...prev, [shotId]: rawImageUrl }));
 
@@ -944,7 +975,13 @@ const App = () => {
             }
             const aspectMap = { '16:9': {w: 800, h: 450}, '1:1': {w: 512, h: 512}, '4:3': {w: 800, h: 600}, '9:16': {w: 450, h: 800}, '3:4': {w: 600, h: 800} };
             const dims = aspectMap[activeSketch?.aspectRatio || '16:9'];
-            const resultUrl = await fetchFreeImage(promptText, dims.w, dims.h);
+            
+            let freeStyle = activeSketch?.imageStyle || 'Storyboard sketch';
+            if (freeStyle === 'Stick Figure') freeStyle = 'Simple literal stick figure drawing on white paper, stickman, stick figures';
+            const charContext = shot.shotCharacters?.length > 0 ? shot.shotCharacters.map(n => activeProfiles.find(p => p.name === n)?.visualStyle || n).join(', ') : "";
+            const freePrompt = `Art style: ${freeStyle}. ${shot.type} shot of ${shot.subject}, ${shot.action}. Location: ${shot.sceneHeading}. ${charContext}`;
+            
+            const resultUrl = await fetchPollinationsImage(freePrompt, dims.w, dims.h);
             setFullResImages(prev => ({ ...prev, [shotId]: resultUrl }));
             updateShot(shotId, 'image', resultUrl);
             break; 
@@ -968,12 +1005,12 @@ const App = () => {
     setLoadingStates(prev => ({ ...prev, [`charImg-${charId}`]: true }));
     const char = activeProfiles.find(c => c.id === charId);
     
-    // HEAVILY WEIGHTED VISUAL STYLE PROMPT
-    const promptText = `A cinematic headshot of a person wearing ${char.visualStyle || 'everyday clothes'}. They are a ${char.age} year old ${char.sex || 'person'}, ${getSkinText(char.melanin)}, ${getGenderText(char.gender)}. Their facial expression shows their personality: ${char.personality || char.archetype}. Plain neutral background. Photorealistic, highly detailed.`;
+    // HEAVILY WEIGHTED VISUAL STYLE PROMPT (Swapped to "Portrait" to avoid tight face cropping)
+    const promptText = `A cinematic portrait photograph focusing heavily on WARDROBE: The subject is wearing ${char.visualStyle || 'everyday clothes'}. They are a ${char.age} year old ${char.sex || 'person'}, ${getSkinText(char.melanin)}, ${getGenderText(char.gender)}. Their facial expression shows their personality: ${char.personality || char.archetype}. Plain neutral background. Photorealistic, highly detailed.`;
 
     if (useFreeImageGen) {
       try {
-        const resultUrl = await fetchFreeAvatar(promptText);
+        const resultUrl = await fetchPollinationsImage(promptText, 512, 512);
         updateChar(charId, 'image', resultUrl);
       } catch (err) {
         alert(err.message);
