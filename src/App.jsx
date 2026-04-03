@@ -124,47 +124,36 @@ const mergeCharacters = (existingProfiles, newAICharacters) => {
   return updatedProfiles;
 };
 
-// HELPER: Robust free image generator to avoid CORS blob issues
-const fetchFreeImage = (promptText, width, height) => {
+// HELPER: Robust free image generator using direct Blob fetching (Bypasses Canvas CORS issues)
+const fetchFreeImage = async (promptText, width, height) => {
+  const safePrompt = encodeURIComponent((promptText.substring(0, 900)).trim() + " cinematic, highly detailed");
+  const url = `https://image.pollinations.ai/prompt/${safePrompt}?width=${width}&height=${height}&nologo=true&seed=${Math.floor(Math.random()*100000)}`;
+  
+  const response = await fetch(url);
+  if (!response.ok) throw new Error("Free image generator failed.");
+  const blob = await response.blob();
+  
   return new Promise((resolve, reject) => {
-    const safePrompt = encodeURIComponent((promptText.substring(0, 900)).trim() + " cinematic, highly detailed");
-    const url = `https://image.pollinations.ai/prompt/${safePrompt}?width=${width}&height=${height}&nologo=true&seed=${Math.floor(Math.random()*100000)}`;
-    
-    const img = new Image();
-    img.crossOrigin = "Anonymous"; // Forces CORS request
-    img.onload = () => {
-      const canvas = document.createElement('canvas');
-      canvas.width = width;
-      canvas.height = height;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0, width, height);
-      resolve(canvas.toDataURL('image/jpeg', 0.8));
-    };
-    img.onerror = () => reject(new Error("Free image generator failed to load."));
-    img.src = url;
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error("Failed to read image blob."));
+    reader.readAsDataURL(blob);
   });
 };
 
-const fetchFreeAvatar = (promptText) => {
+const fetchFreeAvatar = async (promptText) => {
+  const safePrompt = encodeURIComponent((promptText.substring(0, 900)).trim());
+  const url = `https://image.pollinations.ai/prompt/${safePrompt}?width=256&height=256&nologo=true&seed=${Math.floor(Math.random()*100000)}`;
+  
+  const response = await fetch(url);
+  if (!response.ok) throw new Error("Free avatar generator failed.");
+  const blob = await response.blob();
+  
   return new Promise((resolve, reject) => {
-    const safePrompt = encodeURIComponent((promptText.substring(0, 900)).trim());
-    const url = `https://image.pollinations.ai/prompt/${safePrompt}?width=512&height=512&nologo=true&seed=${Math.floor(Math.random()*100000)}`;
-    
-    const img = new Image();
-    img.crossOrigin = "Anonymous";
-    img.onload = () => {
-      const canvas = document.createElement('canvas');
-      canvas.width = 256;
-      canvas.height = 256;
-      const ctx = canvas.getContext('2d');
-      const size = Math.min(img.width, img.height);
-      const x = (img.width - size) / 2;
-      const y = (img.height - size) / 2;
-      ctx.drawImage(img, x, y, size, size, 0, 0, 256, 256);
-      resolve(canvas.toDataURL('image/jpeg', 0.8));
-    };
-    img.onerror = () => reject(new Error("Free image generator failed to load."));
-    img.src = url;
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error("Failed to read image blob."));
+    reader.readAsDataURL(blob);
   });
 };
 
