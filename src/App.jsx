@@ -630,7 +630,7 @@ const App = () => {
   };
 
   const exportSnapshot = () => {
-    const data = { version: "8.1", timestamp: new Date().toISOString(), sketches, shots };
+    const data = { version: "8.2", timestamp: new Date().toISOString(), sketches, shots };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a'); link.href = url; link.download = `SketchBeans_FullBackup_${new Date().getTime()}.json`;
@@ -641,7 +641,7 @@ const App = () => {
     const targetSketch = sketches.find(s => s.id === sketchId);
     const targetShots = shots.filter(s => s.sketchId === sketchId);
     if (!targetSketch) return;
-    const data = { version: "8.1", timestamp: new Date().toISOString(), sketches: [targetSketch], shots: targetShots };
+    const data = { version: "8.2", timestamp: new Date().toISOString(), sketches: [targetSketch], shots: targetShots };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a'); link.href = url; 
@@ -708,8 +708,15 @@ const App = () => {
         planText += `\n[ SCENE: ${headingText.toUpperCase()} ]\n-----------------------------------------\n`;
         currentHeading = headingText;
       }
-      planText += `${index + 1}. [${(shot.type || 'Shot').toUpperCase()}] ${(shot.subject || '').toUpperCase()}\n`;
-      if (shot.cameraMove) planText += `   Camera Move: ${shot.cameraMove}\n`;
+      
+      const isNewScene = index === 0 || shot.sceneHeading !== shootPlan[index - 1].sceneHeading;
+      const isSameSetup = !isNewScene && index > 0 && 
+          shot.type === shootPlan[index - 1].type && 
+          (shot.locationCaveat || '') === (shootPlan[index - 1].locationCaveat || '');
+
+      planText += `${index + 1}. [${(shot.type || 'Shot').toUpperCase()}] ${(shot.subject || '').toUpperCase()}${isSameSetup ? ' (↳ SAME SETUP)' : ''}\n`;
+      if (!isSameSetup && shot.cameraMove) planText += `   Camera Move: ${shot.cameraMove}\n`;
+      if (!isSameSetup && shot.locationCaveat) planText += `   Location Caveat: ${shot.locationCaveat}\n`;
       if (shot.duration) planText += `   Est. Time: ${shot.duration}s\n`;
       if (shot.shotCharacters?.length > 0) planText += `   Characters: ${shot.shotCharacters.join(', ')}\n`;
       if (shot.action) planText += `   Action: ${shot.action}\n`;
@@ -1231,7 +1238,10 @@ const App = () => {
     const printTrigger = typeof isPrintList === 'boolean' ? isPrintList : false;
     setLoadingStates(prev => ({ ...prev, optimizing: true }));
     try {
-      const systemPrompt = `Expert 1st AD. Reorder shots into most efficient SHOOT ORDER. Group by Scene Headings, Location Caveats, Shot Types, and active Characters. Return JSON array of objects with 'id' and 'reason'.`;
+      const systemPrompt = `Expert 1st AD. Reorder shots into the most efficient SHOOT ORDER. 
+      CRITICAL INSTRUCTION: You MUST group shots together consecutively if they share the exact same 'Scene', 'Shot Type', and 'Location Caveat'. This minimizes moving the camera and lighting setups.
+      Return a JSON array of objects with 'id' and 'reason'. For grouped shots, make the reason explicitly clear that it is continuing the same camera setup.`;
+      
       const prompt = `Scene: ${activeSketch?.title}\nShots: ${activeShots.map(s => `ID: ${s.id}, Scene: ${s.sceneHeading}, Type: ${s.type}, Subject: ${s.subject}, Location Caveat: ${s.locationCaveat || 'Base'}, Chars: ${(s.shotCharacters||[]).join(',')}`).join('\n')}`;
       const optimizedIds = await callGemini(prompt, systemPrompt, true);
       
@@ -2301,6 +2311,14 @@ const App = () => {
                      {shootPlan.length > 0 ? (
                       shootPlan.map((shot, index) => {
                         const isNewScene = index === 0 || shot.sceneHeading !== shootPlan[index - 1].sceneHeading;
+                        const isSameSetup = !isNewScene && index > 0 && 
+                            shot.type === shootPlan[index - 1].type && 
+                            (shot.locationCaveat || '') === (shootPlan[index - 1].locationCaveat || '');
+                        const isSameSetupAsNext = index < shootPlan.length - 1 && 
+                            shot.sceneHeading === shootPlan[index + 1].sceneHeading && 
+                            shot.type === shootPlan[index + 1].type && 
+                            (shot.locationCaveat || '') === (shootPlan[index + 1].locationCaveat || '');
+
                         return (
                           <React.Fragment key={shot.id}>
                             {isNewScene && (
@@ -2311,15 +2329,29 @@ const App = () => {
                                 <div className="h-px bg-zinc-800 flex-1"></div>
                               </div>
                             )}
-                            <div className={`group bg-zinc-900/40 border ${shot.fx ? 'border-orange-500/40' : 'border-zinc-800'} rounded-[2rem] p-6 hover:bg-zinc-900/60 transition-all relative overflow-hidden mb-4 shadow-md`}>
+                            <div className={`group bg-zinc-900/40 border-x border-zinc-800 ${shot.fx ? 'border-orange-500/40' : ''} ${isSameSetupAsNext ? 'border-b-0 rounded-t-[2rem] rounded-b-none mb-0 pb-6' : 'border-b border-zinc-800 rounded-b-[2rem] mb-4'} ${isSameSetup ? 'border-t-0 rounded-t-none mt-0 pt-6' : 'border-t border-zinc-800 rounded-t-[2rem] mt-4'} hover:bg-zinc-900/60 transition-all relative overflow-hidden shadow-md`}>
+                               
+                               {isSameSetup && <div className="absolute top-0 left-6 right-6 h-px border-t border-dashed border-zinc-700"></div>}
+
                                <div className="absolute top-0 right-0 p-4 text-4xl text-zinc-800/30 font-black pointer-events-none select-none z-0">{shot.shootOrderNumber}</div>
                                <div className="relative z-10 flex flex-col md:flex-row gap-6">
-                                 {shot.image && <img src={shot.image} className="w-full md:w-48 aspect-video object-cover rounded-xl border border-zinc-800 shrink-0"/>}
+                                 {shot.image ? (
+                                   <img src={shot.image} className="w-full md:w-48 aspect-video object-cover rounded-xl border border-zinc-800 shrink-0"/>
+                                 ) : (
+                                   <div className="w-full md:w-48 aspect-video bg-zinc-950 rounded-xl border border-zinc-800 shrink-0 flex items-center justify-center">
+                                     <ImageIcon size={24} className="text-zinc-800/50" />
+                                   </div>
+                                 )}
                                  <div className="flex-1 space-y-2">
                                    <div className="flex flex-wrap gap-2 items-center">
-                                     <span className="text-xs font-black bg-zinc-800 text-zinc-300 px-2 py-1 rounded uppercase tracking-wider">{shot.type}</span>
-                                     {shot.cameraMove && shot.cameraMove !== 'Locked Off' && <span className="text-[10px] font-black text-blue-500 bg-blue-500/10 border border-blue-500/20 uppercase tracking-widest px-2 py-1 rounded flex items-center gap-1"><Video size={10} className="inline -mt-0.5"/> {shot.cameraMove}</span>}
-                                     {shot.locationCaveat && <span className="text-[10px] font-black text-yellow-500 bg-yellow-500/10 border border-yellow-500/20 uppercase tracking-widest px-2 py-1 rounded">LOC: {shot.locationCaveat}</span>}
+                                     {isSameSetup ? (
+                                       <span className="text-[10px] font-black text-yellow-500 bg-yellow-500/10 border border-yellow-500/20 uppercase tracking-widest px-2 py-1 rounded flex items-center gap-1"><ArrowDownToLine size={10}/> SAME SETUP</span>
+                                     ) : (
+                                       <span className="text-xs font-black bg-zinc-800 text-zinc-300 px-2 py-1 rounded uppercase tracking-wider">{shot.type}</span>
+                                     )}
+                                     {!isSameSetup && shot.cameraMove && shot.cameraMove !== 'Locked Off' && <span className="text-[10px] font-black text-blue-500 bg-blue-500/10 border border-blue-500/20 uppercase tracking-widest px-2 py-1 rounded flex items-center gap-1"><Video size={10} className="inline -mt-0.5"/> {shot.cameraMove}</span>}
+                                     {!isSameSetup && shot.locationCaveat && <span className="text-[10px] font-black text-yellow-500 bg-yellow-500/10 border border-yellow-500/20 uppercase tracking-widest px-2 py-1 rounded">LOC: {shot.locationCaveat}</span>}
+                                     
                                      {shot.duration && <span className="text-[10px] font-black text-green-500 bg-green-500/10 border border-green-500/20 uppercase tracking-widest px-2 py-1 rounded flex items-center gap-1"><Clock size={10} className="inline -mt-0.5"/> {shot.duration}<span className="opacity-50 lowercase ml-[1px]">s</span></span>}
                                      <span className="text-lg font-black uppercase">{shot.subject}</span>
                                    </div>
@@ -2389,34 +2421,48 @@ const App = () => {
                           <table className="w-full text-left border-collapse min-w-[600px]">
                             <thead><tr className="border-b-2 border-black text-[10px] font-black uppercase tracking-widest"><th className="py-2 w-12">#</th><th className="py-2 w-24">Type</th><th className="py-2">Details & Action</th><th className="py-2 w-16">FX</th></tr></thead>
                             <tbody>
-                              {currentDisplayList.map((shot, idx) => (
-                                <React.Fragment key={shot.id}>
-                                  {(idx === 0 || shot.sceneHeading !== currentDisplayList[idx-1].sceneHeading) && (
-                                    <tr>
-                                      <td colSpan="4" className="py-4 font-black uppercase border-b border-black text-xs bg-zinc-100 px-2">{shot.sceneHeading}</td>
+                              {currentDisplayList.map((shot, idx) => {
+                                const isNewScene = idx === 0 || shot.sceneHeading !== currentDisplayList[idx-1].sceneHeading;
+                                const isSameSetup = printListMode === 'shoot-plan' && !isNewScene && idx > 0 && 
+                                  shot.type === currentDisplayList[idx - 1].type && 
+                                  (shot.locationCaveat || '') === (currentDisplayList[idx - 1].locationCaveat || '');
+                                
+                                return (
+                                  <React.Fragment key={shot.id}>
+                                    {isNewScene && (
+                                      <tr>
+                                        <td colSpan="4" className="py-4 font-black uppercase border-b border-black text-xs bg-zinc-100 px-2">{shot.sceneHeading}</td>
+                                      </tr>
+                                    )}
+                                    <tr className="border-b border-zinc-200 align-top break-inside-avoid">
+                                      <td className="py-4 font-bold">{printListMode === 'shoot-plan' ? shot.shootOrderNumber : idx + 1}</td>
+                                      <td className="py-4 font-bold text-[10px] uppercase">
+                                        {isSameSetup ? (
+                                          <span className="text-yellow-600">↳ SAME SETUP</span>
+                                        ) : (
+                                          <>
+                                            {shot.type}
+                                            {shot.cameraMove && shot.cameraMove !== 'Locked Off' && <span className="block text-[8px] text-blue-600 mt-1">{shot.cameraMove}</span>}
+                                            {shot.locationCaveat && <span className="block text-[8px] text-yellow-600 mt-1">LOC: {shot.locationCaveat}</span>}
+                                          </>
+                                        )}
+                                        {shot.shotCharacters?.length > 0 && (
+                                          <div className="mt-2 space-y-1">
+                                            {shot.shotCharacters.map(c => <span key={c} className="block text-[8px] bg-zinc-100 px-1 py-0.5 rounded border border-zinc-300 w-fit">{c}</span>)}
+                                          </div>
+                                        )}
+                                      </td>
+                                      <td className="py-4 space-y-1 pr-4">
+                                        <p className="font-bold">{shot.subject}</p>
+                                        {shot.action && <p className="text-sm">{shot.action}</p>}
+                                        {shot.dialogue && <p className="text-xs italic">"{shot.dialogue}"</p>}
+                                        {shot.notes && <p className="text-[10px] text-zinc-500">Note: {shot.notes}</p>}
+                                      </td>
+                                      <td className="py-4 font-black text-xs">{shot.fx ? 'YES' : '—'}</td>
                                     </tr>
-                                  )}
-                                  <tr className="border-b border-zinc-200 align-top break-inside-avoid">
-                                    <td className="py-4 font-bold">{printListMode === 'shoot-plan' ? shot.shootOrderNumber : idx + 1}</td>
-                                    <td className="py-4 font-bold text-[10px] uppercase">
-                                      {shot.type}
-                                      {shot.cameraMove && shot.cameraMove !== 'Locked Off' && <span className="block text-[8px] text-blue-600 mt-1">{shot.cameraMove}</span>}
-                                      {shot.shotCharacters?.length > 0 && (
-                                        <div className="mt-2 space-y-1">
-                                          {shot.shotCharacters.map(c => <span key={c} className="block text-[8px] bg-zinc-100 px-1 py-0.5 rounded border border-zinc-300 w-fit">{c}</span>)}
-                                        </div>
-                                      )}
-                                    </td>
-                                    <td className="py-4 space-y-1 pr-4">
-                                      <p className="font-bold">{shot.subject}</p>
-                                      {shot.action && <p className="text-sm">{shot.action}</p>}
-                                      {shot.dialogue && <p className="text-xs italic">"{shot.dialogue}"</p>}
-                                      {shot.notes && <p className="text-[10px] text-zinc-500">Note: {shot.notes}</p>}
-                                    </td>
-                                    <td className="py-4 font-black text-xs">{shot.fx ? 'YES' : '—'}</td>
-                                  </tr>
-                                </React.Fragment>
-                              ))}
+                                  </React.Fragment>
+                                )
+                              })}
                             </tbody>
                           </table>
                         </div>
@@ -2428,12 +2474,10 @@ const App = () => {
                                 <span>{shot.sceneHeading}</span>
                                 <span>{shot.duration}<span className="text-zinc-400 lowercase ml-[1px]">s</span></span>
                               </div>
-                              <div className="aspect-video border-b-2 border-black bg-zinc-100 flex items-center justify-center relative overflow-hidden" style={{ aspectRatio: (activeSketch?.aspectRatio || '16:9').replace(':', '/') }}>
+                              <div className="aspect-video border-b-2 border-black bg-white flex items-center justify-center relative overflow-hidden" style={{ aspectRatio: (activeSketch?.aspectRatio || '16:9').replace(':', '/') }}>
                                 {shot.image ? (
                                   <img src={shot.image} alt={`Shot ${idx + 1}`} className="w-full h-full object-cover" />
-                                ) : (
-                                  <div className="text-zinc-300 font-sans font-black tracking-widest uppercase text-xl">NO IMAGE</div>
-                                )}
+                                ) : null}
                                 <div className="absolute top-2 left-2 bg-white border-2 border-black px-2 py-0.5 text-xs font-black shadow-[2px_2px_0px_rgba(0,0,0,1)] text-black">
                                   {idx + 1}
                                 </div>
