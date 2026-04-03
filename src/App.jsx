@@ -82,7 +82,6 @@ const formatTime = (secs) => {
   );
 };
 
-// Merges characters smartly while respecting the "isLocked" toggle
 const mergeCharacters = (existingProfiles, newAICharacters) => {
   if (!newAICharacters || !Array.isArray(newAICharacters)) return existingProfiles;
   
@@ -93,7 +92,7 @@ const mergeCharacters = (existingProfiles, newAICharacters) => {
     const existingIdx = updatedProfiles.findIndex(p => p.name.toLowerCase() === aiChar.name.toLowerCase());
     
     if (existingIdx >= 0) {
-      if (updatedProfiles[existingIdx].isLocked) return; // STRICT LOCK BYPASS
+      if (updatedProfiles[existingIdx].isLocked) return; 
       
       updatedProfiles[existingIdx] = {
         ...updatedProfiles[existingIdx],
@@ -177,6 +176,13 @@ const App = () => {
   const [bulkHeadingEdit, setBulkHeadingEdit] = useState({ old: null, value: '' });
   const [bulkCharEdit, setBulkCharEdit] = useState({ id: null, oldName: '', value: '' }); 
   const [selectedPunchUps, setSelectedPunchUps] = useState([]);
+
+  // Sort Sketches Alphabetically
+  const sortedSketches = [...sketches].sort((a, b) => {
+    const titleA = (a.seriesTitle ? `${a.seriesTitle} - ${a.title}` : (a.title || 'Untitled')).toLowerCase();
+    const titleB = (b.seriesTitle ? `${b.seriesTitle} - ${b.title}` : (b.title || 'Untitled')).toLowerCase();
+    return titleA.localeCompare(titleB);
+  });
 
   const activeSketch = sketches.find(s => s.id === activeSketchId) || sketches[0];
   const activeShots = shots.filter(s => s.sketchId === activeSketchId).sort((a, b) => a.number - b.number);
@@ -597,7 +603,7 @@ const App = () => {
   };
 
   const exportSnapshot = () => {
-    const data = { version: "8.3", timestamp: new Date().toISOString(), sketches, shots };
+    const data = { version: "8.4", timestamp: new Date().toISOString(), sketches, shots };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a'); link.href = url; link.download = `SketchBeans_FullBackup_${new Date().getTime()}.json`;
@@ -608,7 +614,7 @@ const App = () => {
     const targetSketch = sketches.find(s => s.id === sketchId);
     const targetShots = shots.filter(s => s.sketchId === sketchId);
     if (!targetSketch) return;
-    const data = { version: "8.3", timestamp: new Date().toISOString(), sketches: [targetSketch], shots: targetShots };
+    const data = { version: "8.4", timestamp: new Date().toISOString(), sketches: [targetSketch], shots: targetShots };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a'); link.href = url; 
@@ -883,7 +889,7 @@ const App = () => {
               img.src = fallbackUrl;
             };
             reader.readAsDataURL(blob);
-            break; 
+            break; // Exit the Google retry loop since the free fallback succeeded
           }
 
           if (i === maxRetries - 1) {
@@ -1266,7 +1272,7 @@ const App = () => {
       
       if (feedback && Array.isArray(feedback)) {
         updateSketch(activeSketchId, 'punchUpNotes', feedback);
-        setSelectedPunchUps([]); // Reset selections on new generation
+        setSelectedPunchUps([]); 
       }
     } catch (err) { console.error(err); } finally { setLoadingStates(prev => ({ ...prev, punchUp: false })); }
   };
@@ -1275,7 +1281,6 @@ const App = () => {
     if (selectedPunchUps.length === 0) return;
     setLoadingStates(prev => ({ ...prev, implementNotes: true }));
     
-    // Safety check just in case legacy string data is in punchUpNotes
     const safeNotesArray = Array.isArray(activeSketch.punchUpNotes) ? activeSketch.punchUpNotes : [];
     const notesToApply = selectedPunchUps.map(idx => safeNotesArray[idx]);
 
@@ -1286,7 +1291,6 @@ const App = () => {
       
       if (newScript) {
         updateSketch(activeSketchId, 'script', newScript.trim());
-        // Remove the implemented notes from the list
         const remainingNotes = safeNotesArray.filter((_, idx) => !selectedPunchUps.includes(idx));
         updateSketch(activeSketchId, 'punchUpNotes', remainingNotes);
         setSelectedPunchUps([]);
@@ -1324,16 +1328,20 @@ const App = () => {
       
       const existingText = activeSketch[beatType] || '';
       let taskDesc = `Task: Write a new ${beatType.toUpperCase()} for the project.`;
+      let prompt = "";
       
       if (beatType === 'seriesPremise') {
          taskDesc = `Task: Enhance the existing SERIES ENGINE / RECURRING FORMULA: "${existingText}". CRITICAL: Describe the overarching master formula for a recurring series. Keep it punchy, high-concept, and professional.`;
-      } else if (beatType === 'premise' && existingText) {
-         taskDesc = `Task: Enhance the existing PREMISE: "${existingText}". CRITICAL: KEEP THE ORIGINAL IDEA STRICTLY INTACT. Do NOT invent unnecessary new subplots, characters, or heavy details. Just tighten it into a punchy, professional screenplay logline.`;
-      } else if (existingText) {
-         taskDesc = `Task: Enhance the existing ${beatType.toUpperCase()}: "${existingText}".`;
+         prompt = `CURRENT IDEA: "${existingText || 'A new comedy series.'}"\n\n${taskDesc}\nCRITICAL ISOLATION: Do not reference any specific episodic plots. Focus ONLY on what makes this a repeatable television or web series formula.`;
+      } else {
+         if (beatType === 'premise' && existingText) {
+           taskDesc = `Task: Enhance the existing PREMISE: "${existingText}". CRITICAL: KEEP THE ORIGINAL IDEA STRICTLY INTACT. Do NOT invent unnecessary new subplots, characters, or heavy details. Just tighten it into a punchy, professional screenplay logline.`;
+         } else if (existingText) {
+           taskDesc = `Task: Enhance the existing ${beatType.toUpperCase()}: "${existingText}".`;
+         }
+         prompt = `Title: ${getFullTitle()}\nSeries Engine: ${activeSketch?.seriesPremise}\nCharacter Profiles: ${richCharactersContext}\n${beatType !== 'premise' ? `Current Premise: ${activeSketch?.premise}\n` : ''}${taskDesc}`;
       }
       
-      const prompt = `Title: ${getFullTitle()}\nSeries Engine: ${activeSketch?.seriesPremise}\nCharacter Profiles: ${richCharactersContext}\n${beatType !== 'premise' && beatType !== 'seriesPremise' ? `Current Premise: ${activeSketch?.premise}\n` : ''}${taskDesc}`;
       const newBeat = await callGemini(prompt, systemPrompt, false);
       if (newBeat) {
         setHistory(prev => ({ ...prev, [`sketch-${beatType}`]: activeSketch[beatType] || '' }));
@@ -1372,7 +1380,6 @@ const App = () => {
     }
   };
 
-  // --- RENDER LOGIC ---
   const gridColsClass = {
     1: 'grid-cols-1', 2: 'grid-cols-2', 3: 'grid-cols-3', 4: 'grid-cols-4',
   }[boardCols] || 'grid-cols-2';
@@ -1384,7 +1391,6 @@ const App = () => {
   return (
     <div className="flex h-screen w-full bg-zinc-950 text-zinc-100 font-sans selection:bg-orange-500/30 overflow-hidden relative print:block print:h-auto print:overflow-visible print:bg-white">
       
-      {/* --- THE TEASER MODAL (FORCED LOGIN GATE) --- */}
       {!isRealUser && !isGuest && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-in fade-in duration-500">
           <div className="max-w-sm w-full p-8 bg-zinc-900 border border-zinc-800 rounded-[3rem] text-center space-y-8 shadow-2xl relative overflow-hidden">
@@ -1409,7 +1415,6 @@ const App = () => {
         </div>
       )}
 
-      {/* CUSTOM DELETE CONFIRMATION MODAL */}
       {sketchToDelete && (
         <div className="fixed inset-0 bg-black/80 z-[100] flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-zinc-900 border border-zinc-800 p-8 rounded-[2rem] max-w-sm w-full text-center space-y-6 shadow-2xl">
@@ -1428,12 +1433,10 @@ const App = () => {
         </div>
       )}
 
-      {/* MOBILE OVERLAY */}
       {isSidebarOpen && (
         <div className="fixed inset-0 bg-black/60 z-30 md:hidden backdrop-blur-sm print:hidden" onClick={() => setSidebarOpen(false)} />
       )}
 
-      {/* SIDEBAR */}
       <aside className={`absolute md:relative z-40 h-full ${isSidebarOpen ? 'w-72 md:w-72 translate-x-0' : 'w-72 -translate-x-full md:w-0 md:translate-x-0'} transition-all duration-300 overflow-hidden bg-zinc-900 border-r border-zinc-800 flex flex-col shrink-0 print:hidden`}>
         <div className="p-6 flex justify-between items-center">
           <h1 className="text-xl font-bold tracking-tighter flex items-center gap-2">
@@ -1444,7 +1447,7 @@ const App = () => {
         
         <nav className="flex-1 overflow-y-auto px-3 space-y-1 pb-4">
           <div className="text-[10px] font-black text-zinc-600 uppercase tracking-widest px-3 mb-2">My Projects</div>
-          {sketches.map(sketch => {
+          {sortedSketches.map(sketch => {
             const sidebarTitle = sketch.seriesTitle ? `${sketch.seriesTitle} - ${sketch.title}` : (sketch.title || 'Untitled');
             return (
             <div key={sketch.id} className={`w-full group text-left px-3 py-2 rounded-lg flex items-center justify-between transition-colors ${activeSketchId === sketch.id ? 'bg-zinc-800 text-orange-400' : 'text-zinc-400 hover:bg-zinc-800/50'}`}>
@@ -1468,10 +1471,7 @@ const App = () => {
           <button onClick={() => { const id = Date.now().toString(); setSketches([...sketches, { id, title: 'New Project', genre: 'Comedy', tone: 'Absurdist', imageStyle: 'Pencil Sketch', aspectRatio: '16:9', seriesPremise: '', premise: '', characterProfiles: [], props: [], hook: '', escalation: '', ending: '', script: '', punchUpNotes: [] }]); setActiveSketchId(id); if(window.innerWidth < 768) setSidebarOpen(false); }} className="w-full mt-4 flex items-center gap-2 px-3 py-2 text-xs text-zinc-500 hover:text-zinc-200"><Plus size={14} /> NEW PROJECT</button>
         </nav>
 
-        {/* CLOUD SYNC & BYOK PANEL */}
         <div className="border-t border-zinc-800 bg-zinc-950/50 flex flex-col">
-          
-          {/* LUDDITE MODE TOGGLE */}
           <div className="p-4 border-b border-zinc-800/50">
             <div className="flex items-center justify-between">
               <span className="text-[10px] font-black text-purple-500 uppercase tracking-widest flex items-center gap-2">
@@ -1487,7 +1487,6 @@ const App = () => {
             </div>
           </div>
 
-          {/* BYOK: Bring Your Own Key Section */}
           {aiEnabled && (
             <div className="p-4 border-b border-zinc-800/50 space-y-3 bg-zinc-900/30">
               <div className="text-[9px] text-zinc-500 leading-tight">
@@ -1547,9 +1546,7 @@ const App = () => {
 
         <div className="flex-1 overflow-y-auto w-full relative print:block print:h-auto print:overflow-visible">
           
-          {/* REDESIGNED NAVIGATION HEADER */}
           <header className={`p-4 md:p-6 border-b border-zinc-800 bg-zinc-950 md:backdrop-blur-xl sticky top-0 z-20 w-full shrink-0 shadow-lg transition-colors print:hidden`}>
-            
             <div className="max-w-6xl mx-auto flex flex-col gap-4">
               <div className="flex flex-col gap-3">
                 <div className="flex items-center justify-between gap-3">
@@ -1564,7 +1561,6 @@ const App = () => {
                   </div>
                 </div>
                 
-                {/* HIGH VISIBILITY METADATA BADGES */}
                 <div className="flex flex-wrap items-center gap-2 text-[10px] font-black uppercase tracking-widest">
                   <span className="bg-green-500/10 text-green-400 border border-green-500/20 px-2.5 py-1 rounded-md flex items-center gap-1 shadow-sm"><Clock size={12}/> EST. RUNTIME: {formatTime(totalDurationSeconds)}</span>
                   <span className="bg-purple-500/10 text-purple-400 border border-purple-500/20 px-2.5 py-1 rounded-md flex items-center gap-1 shadow-sm"><Film size={12}/> {activeSketch?.genre || 'Comedy'} / {activeSketch?.tone || 'Absurdist'}</span>
@@ -1573,7 +1569,6 @@ const App = () => {
                 </div>
               </div>
               
-              {/* HORIZONTAL TAB NAVIGATION (Reordered Script Before Characters) */}
               <div className="flex items-center gap-2 overflow-x-auto pb-2 border-b border-zinc-800/50 mt-2">
                 <button onClick={() => setViewMode('scene')} className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs font-black whitespace-nowrap transition-all ${viewMode === 'scene' ? 'bg-orange-500 text-white shadow-lg shadow-orange-900/20' : 'bg-zinc-900/50 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200'}`}>
                   <Settings2 size={14}/> CONFIG
@@ -1588,7 +1583,6 @@ const App = () => {
                   <Layout size={14}/> STORYBOARD
                 </button>
               </div>
-
             </div>
           </header>
 
@@ -1601,7 +1595,6 @@ const App = () => {
                   <h2 className="text-xl md:text-2xl font-black uppercase tracking-tighter text-orange-500 flex items-center gap-2"><Settings2 size={24} /> Project Configuration</h2>
                 </div>
 
-                {/* TITLES GRID */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2 bg-zinc-900/40 p-6 md:p-8 rounded-[2.5rem] border border-zinc-800/50 shadow-inner relative">
                     <label className="text-[10px] font-black text-purple-500 uppercase tracking-widest flex items-center justify-between mb-2">
@@ -1617,7 +1610,6 @@ const App = () => {
                   </div>
                 </div>
 
-                {/* THE SERIES ENGINE */}
                 <div className="space-y-2 bg-zinc-900/20 p-6 md:p-8 rounded-[2.5rem] border border-zinc-800/50 border-dashed">
                   <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest flex items-center justify-between mb-2">
                     <span className="flex items-center gap-2">Series Engine / Recurring Formula (Optional)</span>
@@ -1636,7 +1628,6 @@ const App = () => {
                   <textarea value={activeSketch?.seriesPremise || ''} onChange={(e) => updateSketch(activeSketchId, 'seriesPremise', e.target.value)} placeholder="If this is part of a recurring series, describe the master formula here. (e.g. In every episode, two inept cops try to interrogate a completely innocent object.)" className="w-full bg-zinc-950/50 border border-zinc-800/80 rounded-xl p-4 md:p-6 text-sm focus:outline-none focus:border-zinc-500/50 min-h-[80px] resize-y text-zinc-400 italic" />
                 </div>
 
-                {/* THE PREMISE SEED */}
                 <div className="space-y-2 bg-zinc-900/40 p-6 md:p-8 rounded-[2.5rem] border border-zinc-800/50 shadow-inner relative">
                   <label className="text-[10px] font-black text-orange-500 uppercase tracking-widest flex items-center justify-between mb-2">
                     <span className="flex items-center gap-2"><div className="w-1.5 h-1.5 bg-orange-500 rounded-full" /> The Episode Premise / Logline</span>
@@ -1655,12 +1646,11 @@ const App = () => {
                   <textarea value={activeSketch?.premise || ''} onChange={(e) => updateSketch(activeSketchId, 'premise', e.target.value)} placeholder="Describe the basic concept for THIS specific sketch... (e.g. A guy attends a deeply serious funeral but gets stuck in his mascot uniform.)" className="w-full bg-zinc-950/50 border border-zinc-800/80 rounded-xl p-4 md:p-6 text-sm focus:outline-none focus:border-orange-500/50 min-h-[100px] resize-y text-zinc-200" />
                 </div>
 
-                {/* AESTHETICS & PROPS ROW */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                   <div className="space-y-2 bg-zinc-900/20 p-5 rounded-[2rem] border border-zinc-800">
                     <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest flex items-center gap-1"><Film size={12}/> Genre</span>
-                    <select value={GENRES.includes(activeSketch?.genre) ? activeSketch?.genre : 'Other'} onChange={(e) => updateSketch(activeSketchId, 'genre', e.target.value)} className="w-full bg-zinc-950/50 border border-zinc-800 rounded-xl p-3 text-sm focus:outline-none font-bold cursor-pointer text-zinc-300">
-                      {GENRES.map(g => <option key={g} value={g}>{g}</option>)}
+                    <select value={GENRES.includes(activeSketch?.genre) ? activeSketch?.genre : 'Other'} onChange={(e) => updateSketch(activeSketchId, 'genre', e.target.value)} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl p-3 text-sm focus:outline-none font-bold cursor-pointer text-zinc-300">
+                      {GENRES.map(g => <option key={g} value={g} className="bg-zinc-900 text-zinc-300">{g}</option>)}
                     </select>
                     {activeSketch?.genre === 'Other' || (!GENRES.includes(activeSketch?.genre) && activeSketch?.genre) ? (
                       <input value={activeSketch?.genre === 'Other' ? '' : activeSketch?.genre} onChange={(e) => updateSketch(activeSketchId, 'genre', e.target.value)} placeholder="Type custom genre..." className="w-full bg-zinc-950/50 border border-zinc-800 rounded-xl p-3 text-sm focus:outline-none font-bold text-zinc-300 mt-2 shadow-inner" />
@@ -1668,8 +1658,8 @@ const App = () => {
                   </div>
                   <div className="space-y-2 bg-zinc-900/20 p-5 rounded-[2rem] border border-zinc-800">
                     <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest flex items-center gap-1"><VenetianMask size={12}/> Tone</span>
-                    <select value={TONES.includes(activeSketch?.tone) ? activeSketch?.tone : 'Other'} onChange={(e) => updateSketch(activeSketchId, 'tone', e.target.value)} className="w-full bg-zinc-950/50 border border-zinc-800 rounded-xl p-3 text-sm focus:outline-none font-bold cursor-pointer text-purple-400">
-                      {TONES.map(t => <option key={t} value={t}>{t}</option>)}
+                    <select value={TONES.includes(activeSketch?.tone) ? activeSketch?.tone : 'Other'} onChange={(e) => updateSketch(activeSketchId, 'tone', e.target.value)} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl p-3 text-sm focus:outline-none font-bold cursor-pointer text-purple-400">
+                      {TONES.map(t => <option key={t} value={t} className="bg-zinc-900 text-purple-400">{t}</option>)}
                     </select>
                     {activeSketch?.tone === 'Other' || (!TONES.includes(activeSketch?.tone) && activeSketch?.tone) ? (
                       <input value={activeSketch?.tone === 'Other' ? '' : activeSketch?.tone} onChange={(e) => updateSketch(activeSketchId, 'tone', e.target.value)} placeholder="Type custom tone..." className="w-full bg-zinc-950/50 border border-zinc-800 rounded-xl p-3 text-sm focus:outline-none font-bold text-purple-400 mt-2 shadow-inner" />
@@ -1677,8 +1667,8 @@ const App = () => {
                   </div>
                   <div className="space-y-2 bg-zinc-900/20 p-5 rounded-[2rem] border border-zinc-800">
                     <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest flex items-center gap-1"><ImageIcon size={12}/> Art Style</span>
-                    <select value={IMAGE_STYLES.includes(activeSketch?.imageStyle) ? activeSketch?.imageStyle : 'Other'} onChange={(e) => updateSketch(activeSketchId, 'imageStyle', e.target.value)} className="w-full bg-zinc-950/50 border border-zinc-800 rounded-xl p-3 text-sm focus:outline-none font-bold cursor-pointer text-blue-400">
-                      {IMAGE_STYLES.map(s => <option key={s} value={s}>{s}</option>)}
+                    <select value={IMAGE_STYLES.includes(activeSketch?.imageStyle) ? activeSketch?.imageStyle : 'Other'} onChange={(e) => updateSketch(activeSketchId, 'imageStyle', e.target.value)} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl p-3 text-sm focus:outline-none font-bold cursor-pointer text-blue-400">
+                      {IMAGE_STYLES.map(s => <option key={s} value={s} className="bg-zinc-900 text-blue-400">{s}</option>)}
                     </select>
                     {activeSketch?.imageStyle === 'Other' || (!IMAGE_STYLES.includes(activeSketch?.imageStyle) && activeSketch?.imageStyle) ? (
                       <input value={activeSketch?.imageStyle === 'Other' ? '' : activeSketch?.imageStyle} onChange={(e) => updateSketch(activeSketchId, 'imageStyle', e.target.value)} placeholder="Type custom style..." className="w-full bg-zinc-950/50 border border-zinc-800 rounded-xl p-3 text-sm focus:outline-none font-bold text-blue-400 mt-2 shadow-inner" />
@@ -1686,13 +1676,12 @@ const App = () => {
                   </div>
                   <div className="space-y-2 bg-zinc-900/20 p-5 rounded-[2rem] border border-zinc-800">
                     <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest flex items-center gap-1"><Layout size={12}/> Ratio</span>
-                    <select value={activeSketch?.aspectRatio || '16:9'} onChange={(e) => updateSketch(activeSketchId, 'aspectRatio', e.target.value)} className="w-full bg-zinc-950/50 border border-zinc-800 rounded-xl p-3 text-sm focus:outline-none font-bold cursor-pointer text-zinc-300">
-                      {ASPECT_RATIOS.map(s => <option key={s.val} value={s.val}>{s.label}</option>)}
+                    <select value={activeSketch?.aspectRatio || '16:9'} onChange={(e) => updateSketch(activeSketchId, 'aspectRatio', e.target.value)} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl p-3 text-sm focus:outline-none font-bold cursor-pointer text-zinc-300">
+                      {ASPECT_RATIOS.map(s => <option key={s.val} value={s.val} className="bg-zinc-900 text-zinc-300">{s.label}</option>)}
                     </select>
                   </div>
                 </div>
 
-                {/* MASTER PROPS LIST */}
                 <div className="bg-zinc-900/20 p-6 md:p-8 rounded-[2.5rem] border border-zinc-800 shadow-inner">
                   <div className="flex items-center justify-between mb-4">
                     <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Master Props List</span>
@@ -1725,7 +1714,6 @@ const App = () => {
                   </div>
                 </div>
 
-                {/* ADVANCED NARRATIVE BEATS */}
                 <div className="border border-zinc-800 rounded-[2.5rem] overflow-hidden bg-zinc-900/10">
                   <button 
                     onClick={() => setShowAdvancedBeats(!showAdvancedBeats)} 
@@ -1800,7 +1788,6 @@ const App = () => {
                       <textarea value={activeSketch?.script || ''} onChange={(e) => updateSketch(activeSketchId, 'script', e.target.value)} className="w-full bg-zinc-950/80 rounded-2xl p-4 md:p-8 text-xs md:text-sm font-mono text-zinc-300 min-h-[60vh] focus:outline-none border border-zinc-800/50 resize-y leading-relaxed whitespace-pre-wrap shadow-inner pt-12 md:pt-8" placeholder="Generate a script from your storyboard, draft from your config, or type manually..." />
                     </div>
 
-                    {/* SHOWRUNNER NOTES PANEL (CHECKBOX UI) */}
                     {Array.isArray(activeSketch?.punchUpNotes) && activeSketch.punchUpNotes.length > 0 && (
                       <div className="bg-purple-900/10 border border-purple-500/30 rounded-[2rem] p-6 md:p-8 relative shadow-lg animate-in slide-in-from-top-4 mt-6">
                         <button onClick={() => { updateSketch(activeSketchId, 'punchUpNotes', []); setSelectedPunchUps([]); }} className="absolute top-4 right-4 p-2 bg-zinc-950/80 hover:bg-zinc-800 rounded-full text-zinc-500 hover:text-white transition-colors border border-zinc-800"><X size={14}/></button>
@@ -1957,8 +1944,8 @@ const App = () => {
                               placeholder="Character Name" 
                               className="bg-transparent text-2xl font-black focus:outline-none text-zinc-100 w-full placeholder-zinc-800 border-b border-zinc-800 focus:border-green-500 pb-1" 
                            />
-                           <select value={COMEDY_ARCHETYPES.includes(char.archetype) ? char.archetype : 'Other'} onChange={(e) => updateChar(char.id, 'archetype', e.target.value)} className="bg-zinc-950 text-green-400 text-xs font-bold px-3 py-1.5 rounded-lg border border-zinc-800 focus:outline-none cursor-pointer w-full appearance-none">
-                              {COMEDY_ARCHETYPES.map(a => <option key={a} value={a}>{a}</option>)}
+                           <select value={COMEDY_ARCHETYPES.includes(char.archetype) ? char.archetype : 'Other'} onChange={(e) => updateChar(char.id, 'archetype', e.target.value)} className="bg-zinc-900 text-green-400 text-xs font-bold px-3 py-1.5 rounded-lg border border-zinc-800 focus:outline-none cursor-pointer w-full appearance-none">
+                              {COMEDY_ARCHETYPES.map(a => <option key={a} value={a} className="bg-zinc-900 text-green-400">{a}</option>)}
                            </select>
                            {char.archetype === 'Other' || (!COMEDY_ARCHETYPES.includes(char.archetype) && char.archetype) ? (
                               <input value={char.archetype === 'Other' ? '' : char.archetype} onChange={(e) => updateChar(char.id, 'archetype', e.target.value)} placeholder="Type custom archetype..." className="bg-zinc-950 text-green-400 text-xs font-bold px-3 py-1.5 rounded-lg border border-zinc-800 focus:outline-none w-full mt-2 shadow-inner" />
@@ -1977,10 +1964,10 @@ const App = () => {
                           <div className="flex justify-between text-[9px] text-zinc-500 font-black uppercase tracking-widest">
                             <span>Sex (Biology)</span>
                           </div>
-                          <select value={char.sex || 'Male'} onChange={(e) => updateChar(char.id, 'sex', e.target.value)} className="w-full bg-zinc-950 text-zinc-300 text-[10px] font-black px-3 py-1 rounded-lg border border-zinc-800 focus:outline-none cursor-pointer appearance-none uppercase tracking-widest">
-                            <option value="Male">Male</option>
-                            <option value="Female">Female</option>
-                            <option value="Intersex">Intersex</option>
+                          <select value={char.sex || 'Male'} onChange={(e) => updateChar(char.id, 'sex', e.target.value)} className="w-full bg-zinc-900 text-zinc-300 text-[10px] font-black px-3 py-1 rounded-lg border border-zinc-800 focus:outline-none cursor-pointer appearance-none uppercase tracking-widest">
+                            <option value="Male" className="bg-zinc-900 text-zinc-300">Male</option>
+                            <option value="Female" className="bg-zinc-900 text-zinc-300">Female</option>
+                            <option value="Intersex" className="bg-zinc-900 text-zinc-300">Intersex</option>
                           </select>
                         </div>
                         <div className="space-y-2 col-span-2">
@@ -2036,7 +2023,6 @@ const App = () => {
             {viewMode === 'storyboard' && (
               <div className="animate-in fade-in slide-in-from-bottom-4 duration-300 space-y-6 md:space-y-8">
                 
-                {/* Storyboard Header & Sub-Nav */}
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-zinc-800 pb-4 print:hidden">
                   <div className="flex bg-zinc-900 rounded-full p-1 border border-zinc-800 overflow-x-auto w-full sm:w-auto">
                     <button onClick={() => setBoardSubTab('grid')} className={`px-4 py-1.5 rounded-full text-xs font-black transition-colors whitespace-nowrap flex items-center gap-1.5 ${boardSubTab === 'grid' ? 'bg-zinc-100 text-black shadow-lg' : 'text-zinc-500 hover:text-zinc-300'}`}><Layout size={12}/> VISUAL GRID</button>
@@ -2077,7 +2063,6 @@ const App = () => {
                   </div>
                 </div>
 
-                {/* VISUAL GRID VIEW */}
                 {boardSubTab === 'grid' && (
                   <div className="space-y-4">
                     {activeShots.length === 0 && (
@@ -2129,10 +2114,8 @@ const App = () => {
                           
                           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-10 relative z-10 w-full mt-8 md:mt-0">
                             
-                            {/* LEFT COLUMN: METADATA & IMAGE */}
                             <div className="lg:col-span-4 space-y-4 w-full">
                               
-                              {/* DYNAMIC ASPECT RATIO CONTAINER */}
                               <div className="bg-zinc-950 rounded-[1.5rem] border border-zinc-800 overflow-hidden relative group/img flex items-center justify-center mx-auto" style={{ aspectRatio: (activeSketch?.aspectRatio || '16:9').replace(':', '/') }}>
                                 {shot.image ? (
                                   <><img src={shot.image} alt="Storyboard" className="w-full h-full object-cover" />
@@ -2179,17 +2162,18 @@ const App = () => {
                                   <input value={shot.sceneHeading || ''} onChange={(e) => updateShot(shot.id, 'sceneHeading', e.target.value)} placeholder="INT. LOCATION - DAY" className="w-full bg-transparent text-[10px] font-black uppercase text-zinc-300 focus:outline-none min-w-0 tracking-widest" />
                                 </div>
                                 <div className="flex gap-2 w-full">
-                                  <select value={shot.type || 'Medium'} onChange={(e) => updateShot(shot.id, 'type', e.target.value)} className="flex-1 w-full bg-zinc-800 border border-zinc-700 rounded-xl p-3 md:p-2.5 text-xs font-bold focus:ring-1 ring-orange-500 appearance-none">{SHOT_TYPES.map(type => <option key={type} value={type}>{type}</option>)}</select>
+                                  <select value={shot.type || 'Medium'} onChange={(e) => updateShot(shot.id, 'type', e.target.value)} className="flex-1 w-full bg-zinc-900 border border-zinc-700 rounded-xl p-3 md:p-2.5 text-xs font-bold focus:ring-1 ring-orange-500 appearance-none text-zinc-300">
+                                    {SHOT_TYPES.map(type => <option key={type} value={type} className="bg-zinc-900 text-zinc-300">{type}</option>)}
+                                  </select>
                                   <button onClick={() => updateShot(shot.id, 'fx', !shot.fx)} className={`px-4 py-3 md:py-2 rounded-xl text-[10px] font-black border ${shot.fx ? 'bg-orange-600 text-white border-orange-400' : 'bg-zinc-800 text-zinc-500 border-zinc-700'}`}>FX</button>
                                 </div>
                                 <div className="flex items-center bg-zinc-950/50 border border-zinc-800/50 rounded-xl px-3 py-3 md:py-2 w-full"><Map size={12} className="text-zinc-500 mr-2 shrink-0" /><input value={shot.locationCaveat || ''} onChange={(e) => updateShot(shot.id, 'locationCaveat', e.target.value)} placeholder="Specific area caveat... (e.g. Corner desk)" className="w-full bg-transparent text-[10px] font-bold text-zinc-400 focus:outline-none min-w-0" /></div>
                                 
-                                {/* MOVED CAMERA MOVE AND DURATION TO LEFT PANEL */}
                                 <div className="flex gap-2 w-full">
                                   <div className="flex-1 bg-zinc-950/50 border border-zinc-800/50 rounded-xl focus-within:border-blue-500/50 transition-colors flex items-center px-2">
                                      <Video size={12} className="text-blue-500 mr-2 shrink-0"/>
                                      <select value={shot.cameraMove || 'Locked Off'} onChange={(e) => updateShot(shot.id, 'cameraMove', e.target.value)} className="w-full bg-transparent text-[10px] text-blue-400 font-bold py-3 md:py-2 focus:outline-none appearance-none cursor-pointer">
-                                       {CAMERA_MOVES.map(m => <option key={m} value={m}>{m}</option>)}
+                                       {CAMERA_MOVES.map(m => <option key={m} value={m} className="bg-zinc-900 text-blue-400">{m}</option>)}
                                      </select>
                                   </div>
                                   <div className="w-24 bg-zinc-950/50 border border-zinc-800/50 rounded-xl focus-within:border-green-500/50 transition-colors flex items-center px-2">
@@ -2200,7 +2184,6 @@ const App = () => {
                               </div>
                             </div>
 
-                            {/* RIGHT COLUMN: SUBJECT, ACTION, DIALOGUE, JUMP MENU */}
                             <div className="lg:col-span-8 flex flex-col justify-between w-full h-full">
                               <div className="space-y-6">
                                 <div className="flex flex-col sm:flex-row justify-between sm:items-start gap-4">
@@ -2274,7 +2257,7 @@ const App = () => {
                                   <div className="flex items-center px-1">
                                     <span className="text-[9px] font-black text-zinc-600 uppercase tracking-widest mr-1.5 hidden md:block">POS</span>
                                     <select value={index + 1} onChange={(e) => moveToPosition(index, parseInt(e.target.value) - 1)} className="bg-zinc-900 text-orange-500 text-xs font-black px-2 py-1.5 rounded-lg border border-zinc-800 focus:outline-none focus:border-orange-500/50 cursor-pointer appearance-none text-center min-w-[3rem]" title="Jump to position">
-                                      {activeShots.map((_, i) => <option key={i} value={i + 1}>{i + 1}</option>)}
+                                      {activeShots.map((_, i) => <option key={i} value={i + 1} className="bg-zinc-900 text-orange-500">{i + 1}</option>)}
                                     </select>
                                   </div>
                                   <button onClick={() => moveShot(index, 1)} disabled={index === activeShots.length - 1} className="p-2 md:p-1.5 text-zinc-600 hover:text-white disabled:opacity-20 transition-colors" title="Move Down"><ArrowDown size={16} /></button>
@@ -2313,7 +2296,6 @@ const App = () => {
                   </div>
                 )}
                 
-                {/* 1ST AD SHOOT PLAN VIEW */}
                 {boardSubTab === 'shoot-plan' && (
                   <div className="animate-in fade-in slide-in-from-bottom-4 duration-300">
                      {shootPlan.length > 0 ? (
@@ -2381,7 +2363,6 @@ const App = () => {
                   </div>
                 )}
                 
-                {/* PRINT VIEWS (Full screen takeover rendered via CSS) */}
                 {(boardSubTab === 'print-boards' || boardSubTab === 'print-list') && (
                   <div className="print:block print:bg-white print:text-black min-h-screen bg-white text-black p-6 md:p-12 font-serif rounded-[2rem] shadow-2xl print:shadow-none print:rounded-none print:p-0 print:m-0 print:overflow-visible">
                     <div className="flex items-center gap-2 print:hidden mb-12 border-b-2 border-black pb-6 justify-between">
