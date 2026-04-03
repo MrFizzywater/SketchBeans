@@ -1010,7 +1010,7 @@ const App = () => {
 
     if (useFreeImageGen) {
       try {
-        const resultUrl = await fetchPollinationsImage(promptText, 512, 512);
+        const resultUrl = await fetchFreeAvatar(promptText);
         updateChar(charId, 'image', resultUrl);
       } catch (err) {
         alert(err.message);
