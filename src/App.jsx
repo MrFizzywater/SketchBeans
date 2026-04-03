@@ -124,13 +124,23 @@ const mergeCharacters = (existingProfiles, newAICharacters) => {
   return updatedProfiles;
 };
 
-// HELPER: Robust free image generator using direct Blob fetching (Bypasses Canvas CORS issues)
+// HELPER: Robust free image generator using direct Blob fetching with Exponential Backoff
 const fetchFreeImage = async (promptText, width, height) => {
   const safePrompt = encodeURIComponent((promptText.substring(0, 900)).trim() + " cinematic, highly detailed");
   const url = `https://image.pollinations.ai/prompt/${safePrompt}?width=${width}&height=${height}&nologo=true&seed=${Math.floor(Math.random()*100000)}`;
   
-  const response = await fetch(url);
-  if (!response.ok) throw new Error("Free image generator failed.");
+  let response;
+  for (let i = 0; i < 3; i++) {
+    response = await fetch(url);
+    if (response.ok) break;
+    if (response.status === 429 && i < 2) {
+      await new Promise(r => setTimeout(r, 2500 * (i + 1))); // Quietly wait 2.5s, then 5s before retrying
+      continue;
+    }
+    if (response.status === 429) throw new Error("The Free Image server is overwhelmed right now (429). Give it a minute to cool down!");
+    throw new Error("Free image generator failed.");
+  }
+
   const blob = await response.blob();
   
   return new Promise((resolve, reject) => {
@@ -145,8 +155,18 @@ const fetchFreeAvatar = async (promptText) => {
   const safePrompt = encodeURIComponent((promptText.substring(0, 900)).trim());
   const url = `https://image.pollinations.ai/prompt/${safePrompt}?width=256&height=256&nologo=true&seed=${Math.floor(Math.random()*100000)}`;
   
-  const response = await fetch(url);
-  if (!response.ok) throw new Error("Free avatar generator failed.");
+  let response;
+  for (let i = 0; i < 3; i++) {
+    response = await fetch(url);
+    if (response.ok) break;
+    if (response.status === 429 && i < 2) {
+      await new Promise(r => setTimeout(r, 2500 * (i + 1))); 
+      continue;
+    }
+    if (response.status === 429) throw new Error("The Free Image server is overwhelmed right now (429). Give it a minute to cool down!");
+    throw new Error("Free avatar generator failed.");
+  }
+
   const blob = await response.blob();
   
   return new Promise((resolve, reject) => {
