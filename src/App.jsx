@@ -8,6 +8,8 @@ import {
   UserPlus, ArrowUp, ArrowDown, Cloud, GitBranch, LogOut, Lock, Copy, Menu,
   ScrollText, VenetianMask, Clapperboard, Key, EyeOff, User, Settings2, Users, Settings, Video, RefreshCcw, ArrowDownToLine, ArrowUpFromLine, Undo, Scissors, CheckCircle2, Film, Unlock
 } from 'lucide-react';
+import JSZip from 'jszip';
+import { saveAs } from 'file-saver';
 
 // --- FIREBASE IMPORTS ---
 import { initializeApp } from 'firebase/app';
@@ -246,6 +248,7 @@ const App = () => {
   const [aiMode, setAiMode] = useState(localStorage.getItem('sketchbeans_ai_mode') || 'manual');
   const [useFreeImageGen, setUseFreeImageGen] = useState(localStorage.getItem('sb_free_img') === 'true');
   const [history, setHistory] = useState({});
+  const [showSeriesControls, setShowSeriesControls] = useState(localStorage.getItem('sketchbeans_show_series') === 'true');
 
   const [isSyncing, setIsSyncing] = useState(false);
   const isInitialLoad = useRef({ sketches: true, shots: true });
@@ -799,6 +802,40 @@ const App = () => {
       window.open(imageUrl, '_blank'); 
     } else {
       const link = document.createElement('a'); link.href = imageUrl; link.download = `SketchBeans_Shot_${shotNumber}.png`; link.click();
+    }
+  };
+
+  const downloadAllImagesZip = async () => {
+    if (!activeShots || activeShots.length === 0) return alert("No shots to download.");
+    let hasImages = false;
+    const zip = new JSZip();
+    const safeTitle = getFullTitle().replace(/[^a-z0-9]/gi, '_').toLowerCase() || 'project';
+    const folder = zip.folder(safeTitle);
+
+    activeShots.forEach((shot) => {
+      const imageUrl = fullResImages[shot.id] || shot.image;
+      if (imageUrl && !imageUrl.startsWith('http')) {
+        const base64Data = imageUrl.split(',')[1];
+        if (base64Data) {
+          const shotNum = String(shot.number).padStart(3, '0');
+          const safeSubject = (shot.subject || 'shot').replace(/[^a-z0-9]/gi, '_').toLowerCase().substring(0, 30);
+          folder.file(`${shotNum}_${safeSubject}.jpg`, base64Data, { base64: true });
+          hasImages = true;
+        }
+      }
+    });
+
+    if (!hasImages) return alert("No generated images found to download.");
+
+    setLoadingStates(prev => ({ ...prev, zip: true }));
+    try {
+      const content = await zip.generateAsync({ type: 'blob' });
+      saveAs(content, `${safeTitle}_images.zip`);
+    } catch (err) {
+      console.error(err);
+      alert("Failed to generate ZIP file.");
+    } finally {
+      setLoadingStates(prev => ({ ...prev, zip: false }));
     }
   };
 
@@ -1592,11 +1629,16 @@ const App = () => {
         <nav className="flex-1 overflow-y-auto px-3 space-y-1 pb-4">
           <div className="text-[10px] font-black text-zinc-600 uppercase tracking-widest px-3 mb-2">My Projects</div>
           {sortedSketches.map(sketch => {
+            const isSeries = !!sketch.seriesTitle;
             const sidebarTitle = sketch.seriesTitle ? `${sketch.seriesTitle} - ${sketch.title}` : (sketch.title || 'Untitled');
             return (
-            <div key={sketch.id} className={`w-full group text-left px-3 py-2 rounded-lg flex items-center justify-between transition-colors ${activeSketchId === sketch.id ? 'bg-zinc-800 text-orange-400' : 'text-zinc-400 hover:bg-zinc-800/50'}`}>
+            <div key={sketch.id} className={`w-full group text-left px-3 py-2 rounded-lg flex items-center justify-between transition-colors ${activeSketchId === sketch.id ? 'bg-zinc-800 text-orange-400' : 'text-zinc-400 hover:bg-zinc-800/50'} ${isSeries ? 'border-l-[3px] border-purple-500 bg-purple-500/5' : ''}`}>
               <button onClick={() => { setActiveSketchId(sketch.id); if(window.innerWidth < 768) setSidebarOpen(false); }} className="flex items-center gap-3 flex-1 min-w-0 overflow-x-hidden hover:overflow-x-auto scrollbar-hide whitespace-nowrap" title={sidebarTitle}>
-                <FileText size={16} className="shrink-0" /> <span className="font-medium text-sm">{sidebarTitle}</span>
+                {isSeries ? <Clapperboard size={16} className={`shrink-0 ${activeSketchId === sketch.id ? 'text-purple-400' : 'text-purple-500/70'}`} /> : <FileText size={16} className="shrink-0" />} 
+                <span className="font-medium text-sm flex flex-col items-start leading-tight min-w-0 w-full">
+                  {isSeries && <span className={`text-[9px] font-black uppercase tracking-widest truncate w-full text-left ${activeSketchId === sketch.id ? 'text-purple-400' : 'text-purple-500/70'}`}>{sketch.seriesTitle}</span>}
+                  <span className="truncate w-full text-left">{sketch.title || 'Untitled'}</span>
+                </span>
               </button>
               <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity pl-2 shrink-0 bg-gradient-to-r from-transparent to-zinc-900">
                 <button onClick={(e) => { e.stopPropagation(); cloneSketchAsEpisode(sketch); }} className="hover:text-green-400 p-1.5" title="Duplicate as New Episode">
@@ -1710,6 +1752,9 @@ const App = () => {
             <div className="grid grid-cols-2 gap-2 pt-2 border-t border-zinc-800/50">
               <button onClick={exportSnapshot} className="flex justify-center items-center gap-2 px-2 py-2 text-[9px] font-black text-zinc-500 hover:text-orange-400 border border-zinc-800 rounded-lg transition-all"><Download size={10} /> BACKUP ALL</button>
               <button onClick={handleImportClick} className="flex justify-center items-center gap-2 px-2 py-2 text-[9px] font-black text-zinc-500 hover:text-purple-400 border border-zinc-800 rounded-lg transition-all" title="Appends file to your current rig"><Upload size={10} /> IMPORT</button>
+              <button onClick={downloadAllImagesZip} className="col-span-2 flex justify-center items-center gap-2 px-2 py-2 text-[9px] font-black text-zinc-500 hover:text-green-400 border border-zinc-800 rounded-lg transition-all">
+                {loadingStates.zip ? <Loader2 size={10} className="animate-spin" /> : <Download size={10} />} ZIP IMAGES
+              </button>
             </div>
             <input type="file" ref={fileInputRef} onChange={importSnapshot} accept=".json" className="hidden" />
           </div>
@@ -1770,16 +1815,22 @@ const App = () => {
               <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-300">
                 <div className="flex items-center justify-between border-b border-zinc-800 pb-4">
                   <h2 className="text-xl md:text-2xl font-black uppercase tracking-tighter text-orange-500 flex items-center gap-2"><Settings2 size={24} /> Project Configuration</h2>
+                  <label className="flex items-center gap-2 text-xs font-bold text-zinc-400 cursor-pointer hover:text-zinc-200">
+                    <input type="checkbox" checked={showSeriesControls} onChange={(e) => { setShowSeriesControls(e.target.checked); localStorage.setItem('sketchbeans_show_series', e.target.checked.toString()); }} className="accent-purple-500 w-4 h-4 rounded" />
+                    Show Series Controls
+                  </label>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2 bg-zinc-900/40 p-6 md:p-8 rounded-[2.5rem] border border-zinc-800/50 shadow-inner relative">
-                    <label className="text-[10px] font-black text-purple-500 uppercase tracking-widest flex items-center justify-between mb-2">
-                      <span className="flex items-center gap-2"><div className="w-1.5 h-1.5 bg-purple-500 rounded-full" /> Series Title</span>
-                    </label>
-                    <input value={activeSketch?.seriesTitle || ''} onChange={(e) => updateSketch(activeSketchId, 'seriesTitle', e.target.value)} placeholder="Series Name..." className="w-full bg-zinc-950/50 border border-zinc-800/80 rounded-xl p-4 text-xl font-black focus:outline-none focus:border-purple-500/50 text-zinc-200" />
-                  </div>
-                  <div className="space-y-2 bg-zinc-900/40 p-6 md:p-8 rounded-[2.5rem] border border-zinc-800/50 shadow-inner relative">
+                  {showSeriesControls && (
+                    <div className="space-y-2 bg-zinc-900/40 p-6 md:p-8 rounded-[2.5rem] border border-zinc-800/50 shadow-inner relative">
+                      <label className="text-[10px] font-black text-purple-500 uppercase tracking-widest flex items-center justify-between mb-2">
+                        <span className="flex items-center gap-2"><div className="w-1.5 h-1.5 bg-purple-500 rounded-full" /> Series Title</span>
+                      </label>
+                      <input value={activeSketch?.seriesTitle || ''} onChange={(e) => updateSketch(activeSketchId, 'seriesTitle', e.target.value)} placeholder="Series Name..." className="w-full bg-zinc-950/50 border border-zinc-800/80 rounded-xl p-4 text-xl font-black focus:outline-none focus:border-purple-500/50 text-zinc-200" />
+                    </div>
+                  )}
+                  <div className={`space-y-2 bg-zinc-900/40 p-6 md:p-8 rounded-[2.5rem] border border-zinc-800/50 shadow-inner relative ${!showSeriesControls ? 'col-span-1 md:col-span-2' : ''}`}>
                     <label className="text-[10px] font-black text-orange-500 uppercase tracking-widest flex items-center justify-between mb-2">
                       <span className="flex items-center gap-2"><div className="w-1.5 h-1.5 bg-orange-500 rounded-full" /> Episode / Sketch Title</span>
                     </label>
@@ -1787,23 +1838,25 @@ const App = () => {
                   </div>
                 </div>
 
-                <div className="space-y-2 bg-zinc-900/20 p-6 md:p-8 rounded-[2.5rem] border border-zinc-800/50 border-dashed">
-                  <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest flex items-center justify-between mb-2">
-                    <span className="flex items-center gap-2">Series Engine / Recurring Formula (Optional)</span>
-                    <div className="flex items-center gap-1.5">
-                      <button onClick={() => handleVoiceInput(activeSketch?.seriesPremise, (val) => updateSketch(activeSketchId, 'seriesPremise', val), 'seriesPremise')} className={`p-1.5 rounded transition-colors ${activeMicId === 'seriesPremise' ? 'bg-red-500/20 text-red-500 animate-pulse' : 'hover:bg-zinc-800 text-zinc-500 hover:text-zinc-300'}`} title="Dictate"><Mic size={12}/></button>
-                      {history[`sketch-seriesPremise`] !== undefined && (
-                        <button onClick={() => revertSketchField('seriesPremise')} className="p-1.5 hover:bg-zinc-800 rounded transition-colors text-zinc-500 hover:text-zinc-300" title="Undo AI edit"><Undo size={12}/></button>
-                      )}
-                      {aiMode === 'cowriter' && (
-                        <button onClick={() => generateNarrativeBeat('seriesPremise')} disabled={!isRealUser || isAIBusy} className="p-1.5 hover:bg-purple-500/20 rounded transition-colors disabled:opacity-50 text-purple-500 flex items-center gap-1 text-[9px]">
-                          {!isRealUser ? <Lock size={10} /> : <Sparkles size={10} />} GENERATE
-                        </button>
-                      )}
-                    </div>
-                  </label>
-                  <textarea value={activeSketch?.seriesPremise || ''} onChange={(e) => updateSketch(activeSketchId, 'seriesPremise', e.target.value)} placeholder="If this is part of a recurring series, describe the master formula here. (e.g. In every episode, two inept cops try to interrogate a completely innocent object.)" className="w-full bg-zinc-950/50 border border-zinc-800/80 rounded-xl p-4 md:p-6 text-sm focus:outline-none focus:border-zinc-500/50 min-h-[80px] resize-y text-zinc-400 italic" />
-                </div>
+                {showSeriesControls && (
+                  <div className="space-y-2 bg-zinc-900/20 p-6 md:p-8 rounded-[2.5rem] border border-zinc-800/50 border-dashed">
+                    <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest flex items-center justify-between mb-2">
+                      <span className="flex items-center gap-2">Series Engine / Recurring Formula (Optional)</span>
+                      <div className="flex items-center gap-1.5">
+                        <button onClick={() => handleVoiceInput(activeSketch?.seriesPremise, (val) => updateSketch(activeSketchId, 'seriesPremise', val), 'seriesPremise')} className={`p-1.5 rounded transition-colors ${activeMicId === 'seriesPremise' ? 'bg-red-500/20 text-red-500 animate-pulse' : 'hover:bg-zinc-800 text-zinc-500 hover:text-zinc-300'}`} title="Dictate"><Mic size={12}/></button>
+                        {history[`sketch-seriesPremise`] !== undefined && (
+                          <button onClick={() => revertSketchField('seriesPremise')} className="p-1.5 hover:bg-zinc-800 rounded transition-colors text-zinc-500 hover:text-zinc-300" title="Undo AI edit"><Undo size={12}/></button>
+                        )}
+                        {aiMode === 'cowriter' && (
+                          <button onClick={() => generateNarrativeBeat('seriesPremise')} disabled={!isRealUser || isAIBusy} className="p-1.5 hover:bg-purple-500/20 rounded transition-colors disabled:opacity-50 text-purple-500 flex items-center gap-1 text-[9px]">
+                            {!isRealUser ? <Lock size={10} /> : <Sparkles size={10} />} GENERATE
+                          </button>
+                        )}
+                      </div>
+                    </label>
+                    <textarea value={activeSketch?.seriesPremise || ''} onChange={(e) => updateSketch(activeSketchId, 'seriesPremise', e.target.value)} placeholder="If this is part of a recurring series, describe the master formula here. (e.g. In every episode, two inept cops try to interrogate a completely innocent object.)" className="w-full bg-zinc-950/50 border border-zinc-800/80 rounded-xl p-4 md:p-6 text-sm focus:outline-none focus:border-zinc-500/50 min-h-[80px] resize-y text-zinc-400 italic" />
+                  </div>
+                )}
 
                 <div className="space-y-2 bg-zinc-900/40 p-6 md:p-8 rounded-[2.5rem] border border-zinc-800/50 shadow-inner relative">
                   <label className="text-[10px] font-black text-orange-500 uppercase tracking-widest flex items-center justify-between mb-2">
