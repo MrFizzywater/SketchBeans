@@ -21,17 +21,35 @@ import {
   getFirestore, collection, doc, setDoc, onSnapshot, deleteDoc, writeBatch
 } from 'firebase/firestore';
 
+declare global {
+  var __firebase_config: string | undefined;
+  var __app_id: string | undefined;
+  var __initial_auth_token: string | undefined;
+  interface Window {
+    SpeechRecognition: any;
+    webkitSpeechRecognition: any;
+  }
+}
+
+interface ImportMetaEnv {
+  [key: string]: any;
+}
+
+interface ImportMeta {
+  readonly env: ImportMetaEnv;
+}
+
 // --- ENVIRONMENT INITIALIZATION ---
-let firebaseConfig = {};
+let firebaseConfig: any = {};
 let globalTextModel = "gemini-flash-latest"; 
 let globalImageModel = "imagen-3.0-generate-001"; // Defaulted to 3.0 to prevent 404 preview blocks
 let globalFreeImageUrl = "https://image.pollinations.ai/prompt/"; // Default free endpoint
 
 try {
-  if (typeof import.meta !== 'undefined' && import.meta.env) {
-    if (import.meta.env.VITE_GEMINI_TEXT_MODEL) globalTextModel = import.meta.env.VITE_GEMINI_TEXT_MODEL;
-    if (import.meta.env.VITE_GEMINI_IMAGE_MODEL) globalImageModel = import.meta.env.VITE_GEMINI_IMAGE_MODEL;
-    if (import.meta.env.VITE_FREE_IMAGE_URL) globalFreeImageUrl = import.meta.env.VITE_FREE_IMAGE_URL;
+  if (typeof import.meta !== 'undefined' && (import.meta as any).env) {
+    if ((import.meta as any).env.VITE_GEMINI_TEXT_MODEL) globalTextModel = (import.meta as any).env.VITE_GEMINI_TEXT_MODEL;
+    if ((import.meta as any).env.VITE_GEMINI_IMAGE_MODEL) globalImageModel = (import.meta as any).env.VITE_GEMINI_IMAGE_MODEL;
+    if ((import.meta as any).env.VITE_FREE_IMAGE_URL) globalFreeImageUrl = (import.meta as any).env.VITE_FREE_IMAGE_URL;
   }
 } catch (e) { /* Ignore */ }
 
@@ -40,12 +58,12 @@ if (typeof __firebase_config !== 'undefined') {
 } else {
   try {
     firebaseConfig = {
-      apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-      authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-      projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-      storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-      messagingSenderId: import.meta.env.VITE_FIREBASE_SENDER_ID,
-      appId: import.meta.env.VITE_FIREBASE_APP_ID
+      apiKey: (import.meta as any).env.VITE_FIREBASE_API_KEY,
+      authDomain: (import.meta as any).env.VITE_FIREBASE_AUTH_DOMAIN,
+      projectId: (import.meta as any).env.VITE_FIREBASE_PROJECT_ID,
+      storageBucket: (import.meta as any).env.VITE_FIREBASE_STORAGE_BUCKET,
+      messagingSenderId: (import.meta as any).env.VITE_FIREBASE_SENDER_ID,
+      appId: (import.meta as any).env.VITE_FIREBASE_APP_ID
     };
   } catch (e) { /* Ignore in strict environments */ }
 }
@@ -634,7 +652,7 @@ const App = () => {
     if (!file) return;
     const reader = new FileReader();
     reader.onload = (e) => {
-      const rawImageUrl = e.target.result;
+      const rawImageUrl = e.target?.result as string;
       setFullResImages(prev => ({ ...prev, [shotId]: rawImageUrl }));
 
       const img = new Image();
@@ -668,7 +686,7 @@ const App = () => {
         const ctx = canvas.getContext('2d'); ctx.drawImage(img, 0, 0, width, height);
         updateChar(charId, 'image', canvas.toDataURL('image/jpeg', 0.8));
       };
-      img.src = e.target.result;
+      img.src = e.target?.result as string;
     };
     reader.readAsDataURL(file);
   };
@@ -711,7 +729,7 @@ const App = () => {
     const reader = new FileReader();
     reader.onload = async (e) => {
       try {
-        const content = JSON.parse(e.target?.result);
+        const content = JSON.parse(e.target?.result as string);
         if (content.sketches && content.shots) {
           const importId = Date.now().toString();
           
@@ -946,7 +964,7 @@ const App = () => {
     try {
       for (let i = 0; i < maxRetries; i++) {
         try {
-          const payload = { contents: [{ parts: [{ text: prompt }] }], systemInstruction: { parts: [{ text: systemPrompt }] } };
+          const payload: any = { contents: [{ parts: [{ text: prompt }] }], systemInstruction: { parts: [{ text: systemPrompt }] } };
           if (isJson) payload.generationConfig = { responseMimeType: "application/json" };
           
           const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${globalTextModel}:generateContent?key=${activeKey}`, {
